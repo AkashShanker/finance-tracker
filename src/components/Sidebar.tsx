@@ -172,7 +172,7 @@ export default function Sidebar() {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-64 md:min-h-screen bg-sidebar">
+      <aside className="hidden md:flex md:flex-col md:w-64 md:h-screen md:sticky md:top-0 bg-sidebar overflow-y-auto">
         {navContent}
       </aside>
     </>
