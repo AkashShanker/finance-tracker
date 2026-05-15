@@ -37,6 +37,11 @@ export default function SettingsPage() {
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinMessage, setJoinMessage] = useState("");
 
+  // Transfer ownership
+  const [transferTo, setTransferTo] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferMessage, setTransferMessage] = useState("");
+
   // Delete account
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -198,6 +203,28 @@ export default function SettingsPage() {
     setTimeout(() => {
       window.location.reload();
     }, 1000);
+  }
+
+  async function transferOwnership() {
+    if (!transferTo || !profile) return;
+    setTransferring(true);
+    setTransferMessage("");
+
+    const supabase = createClient();
+    const { data: result, error } = await supabase.rpc("transfer_household_ownership", {
+      p_current_owner_id: profile.id,
+      p_new_owner_id: transferTo,
+    });
+
+    if (error || result?.error) {
+      setTransferMessage("Failed: " + (error?.message || result?.error));
+    } else {
+      setTransferMessage("Ownership transferred!");
+      setTransferTo("");
+      load();
+    }
+    setTransferring(false);
+    setTimeout(() => setTransferMessage(""), 3000);
   }
 
   const isOwner = household?.owner_id === profile?.id;
@@ -515,8 +542,46 @@ export default function SettingsPage() {
             </button>
           </div>
           <p className="text-xs text-muted">Share this code with household members. They enter it during signup to join and get their own login.</p>
-          {isOwner && (
-            <p className="text-xs text-primary mt-1 font-medium">You are the household owner (admin).</p>
+          {isOwner ? (
+            <div className="mt-3 pt-3 border-t border-border space-y-2">
+              <p className="text-xs text-primary font-medium">You are the household owner (admin).</p>
+              <div>
+                <label className="block text-xs text-muted mb-1">Transfer ownership to</label>
+                <div className="flex gap-2">
+                  <select
+                    value={transferTo}
+                    onChange={(e) => setTransferTo(e.target.value)}
+                    className="flex-1 px-3 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select a member...</option>
+                    {members
+                      .filter((m) => m.profile_id && m.profile_id !== profile?.id)
+                      .map((m) => (
+                        <option key={m.id} value={m.profile_id!}>
+                          {m.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    onClick={transferOwnership}
+                    disabled={!transferTo || transferring}
+                    className="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 text-sm font-medium"
+                  >
+                    {transferring ? "..." : "Transfer"}
+                  </button>
+                </div>
+                {members.filter((m) => m.profile_id && m.profile_id !== profile?.id).length === 0 && (
+                  <p className="text-xs text-muted mt-1">No other members with a login yet. They need to sign up first.</p>
+                )}
+                {transferMessage && (
+                  <p className={`text-xs mt-1 ${transferMessage.includes("Failed") ? "text-danger" : "text-success"}`}>
+                    {transferMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted mt-1">Household managed by {members.find((m) => m.profile_id === household?.owner_id)?.name || "owner"}.</p>
           )}
         </div>
       )}
