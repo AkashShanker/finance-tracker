@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Household, HouseholdMember, TrackedAccount } from "@/lib/types";
-import { Copy, Users, User, Plus, Trash2, Pencil, X, Check, GripVertical } from "lucide-react";
+import { Copy, Users, User, Plus, Trash2, Pencil, X, Check, GripVertical, AlertTriangle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function SettingsPage() {
@@ -35,6 +36,11 @@ export default function SettingsPage() {
   const [joinCode, setJoinCode] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinMessage, setJoinMessage] = useState("");
+
+  // Delete account
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
 
   // Add account
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -192,6 +198,37 @@ export default function SettingsPage() {
     setTimeout(() => {
       window.location.reload();
     }, 1000);
+  }
+
+  const isOwner = household?.owner_id === profile?.id;
+
+  async function handleDeleteAccount() {
+    if (!profile) return;
+    setDeleting(true);
+    const supabase = createClient();
+
+    if (isOwner) {
+      const { data: result, error } = await supabase.rpc("delete_household", {
+        p_user_id: profile.id,
+      });
+      if (error || result?.error) {
+        alert("Failed: " + (error?.message || result?.error));
+        setDeleting(false);
+        return;
+      }
+    } else {
+      const { data: result, error } = await supabase.rpc("delete_my_account", {
+        p_user_id: profile.id,
+      });
+      if (error || result?.error) {
+        alert("Failed: " + (error?.message || result?.error));
+        setDeleting(false);
+        return;
+      }
+    }
+
+    await supabase.auth.signOut();
+    router.push("/login");
   }
 
   function getMemberName(id: string | null) {
@@ -478,8 +515,70 @@ export default function SettingsPage() {
             </button>
           </div>
           <p className="text-xs text-muted">Share this code with household members. They enter it during signup to join and get their own login.</p>
+          {isOwner && (
+            <p className="text-xs text-primary mt-1 font-medium">You are the household owner (admin).</p>
+          )}
         </div>
       )}
+
+      {/* Danger Zone */}
+      <div className="bg-card rounded-xl border border-red-200 p-5">
+        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2 text-danger">
+          <AlertTriangle size={20} /> Danger Zone
+        </h2>
+
+        {isOwner ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              You are the <strong>household owner</strong>. Deleting your account will permanently remove the entire household, including all bills, debts, history, tracked accounts, and all member accounts. This cannot be undone.
+            </p>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Type <span className="font-mono text-danger">delete everything</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="delete everything"
+                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+              />
+            </div>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleteConfirm !== "delete everything" || deleting}
+              className="px-4 py-2 bg-danger text-white rounded-lg hover:opacity-90 disabled:opacity-30 text-sm font-medium"
+            >
+              {deleting ? "Deleting..." : "Delete Household & All Data"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              This will remove your login and unlink you from the household. Your name, assigned bills, and other household data will remain so the owner can still manage them. This cannot be undone.
+            </p>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Type <span className="font-mono text-danger">delete my account</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="delete my account"
+                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+              />
+            </div>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleteConfirm !== "delete my account" || deleting}
+              className="px-4 py-2 bg-danger text-white rounded-lg hover:opacity-90 disabled:opacity-30 text-sm font-medium"
+            >
+              {deleting ? "Deleting..." : "Delete My Account"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

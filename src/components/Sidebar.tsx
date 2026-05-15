@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -32,16 +32,61 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+// Generate a deterministic color from a string
+function stringToColor(str: string): string {
+  const colors = [
+    "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-rose-500",
+    "bg-amber-500", "bg-cyan-500", "bg-pink-500", "bg-teal-500",
+    "bg-indigo-500", "bg-orange-500",
+  ];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+  return email.slice(0, 2).toUpperCase();
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState("");
+
+  useEffect(() => {
+    async function loadUser() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserEmail(user.email || "");
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .single();
+      if (prof) setUserName(prof.display_name);
+    }
+    loadUser();
+  }, []);
 
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
   }
+
+  const initials = getInitials(userName, userEmail);
+  const avatarColor = stringToColor(userEmail || "user");
+  const displayName = userName || userEmail.split("@")[0];
 
   const navContent = (
     <>
@@ -70,13 +115,24 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-3">
+
+      {/* User profile + sign out */}
+      <div className="p-3 border-t border-white/10">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className={`w-9 h-9 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white truncate">{displayName}</p>
+            {userName && <p className="text-xs text-slate-400 truncate">{userEmail}</p>}
+          </div>
+        </div>
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-sidebar-hover hover:text-white w-full transition-colors"
+          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-sidebar-hover hover:text-white w-full transition-colors"
         >
-          <LogOut size={20} />
-          <span>Sign Out</span>
+          <LogOut size={18} />
+          <span className="text-sm">Sign Out</span>
         </button>
       </div>
     </>
