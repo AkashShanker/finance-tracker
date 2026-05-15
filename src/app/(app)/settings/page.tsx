@@ -31,6 +31,11 @@ export default function SettingsPage() {
   const [editMemberPayFreq, setEditMemberPayFreq] = useState<string>("");
   const [editMemberPayDate, setEditMemberPayDate] = useState("");
 
+  // Join household
+  const [joinCode, setJoinCode] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinMessage, setJoinMessage] = useState("");
+
   // Add account
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: "", account_type: "asset" as "asset" | "debt", owner_member_id: "" });
@@ -159,6 +164,36 @@ export default function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function joinHousehold() {
+    if (!joinCode.trim() || !profile) return;
+    setJoinLoading(true);
+    setJoinMessage("");
+
+    const supabase = createClient();
+    const { data: result, error } = await supabase.rpc("join_household_by_code", {
+      p_user_id: profile.id,
+      p_invite_code: joinCode.trim(),
+    });
+
+    if (error) {
+      setJoinMessage("Failed: " + error.message);
+      setJoinLoading(false);
+      return;
+    }
+
+    if (result?.error) {
+      setJoinMessage(result.error);
+      setJoinLoading(false);
+      return;
+    }
+
+    setJoinMessage("Joined household successfully! Reloading...");
+    setJoinCode("");
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  }
+
   function getMemberName(id: string | null) {
     if (!id) return "Shared";
     return members.find((m) => m.id === id)?.name || "Unknown";
@@ -203,6 +238,36 @@ export default function SettingsPage() {
             {saving ? "Saving..." : "Save Changes"}
           </button>
         </form>
+      </div>
+
+      {/* Join Household */}
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h2 className="text-lg font-semibold mb-2">Join a Household</h2>
+        <p className="text-sm text-muted mb-3">
+          Have an invite code from a family member? Enter it to switch to their household and share finances.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value)}
+            placeholder="Enter invite code"
+            className="flex-1 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono tracking-widest"
+            onKeyDown={(e) => e.key === "Enter" && joinHousehold()}
+          />
+          <button
+            onClick={joinHousehold}
+            disabled={!joinCode.trim() || joinLoading}
+            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 text-sm font-medium"
+          >
+            {joinLoading ? "Joining..." : "Join"}
+          </button>
+        </div>
+        {joinMessage && (
+          <div className={`text-sm p-2 rounded-lg mt-2 ${joinMessage.includes("success") ? "bg-green-50 text-success" : "bg-red-50 text-danger"}`}>
+            {joinMessage}
+          </div>
+        )}
       </div>
 
       {/* Household Members */}
