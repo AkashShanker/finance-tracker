@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import type { Bill, Debt, Profile, HouseholdMember } from "@/lib/types";
-import { getUpcomingPaydays, getNextDueDate, getBillEvents } from "@/lib/payday";
+import { getUpcomingPaydays, getNextDueDate, getBillEvents, advanceBillDate } from "@/lib/payday";
 import type { ScheduleType } from "@/lib/payday";
 import Modal from "@/components/Modal";
 import { Check, ChevronLeft, ChevronRight, List, Calendar as CalendarIcon } from "lucide-react";
@@ -217,17 +217,13 @@ export default function CalendarPage() {
     const pd = getPaydaysForBill(payingBill);
     const nextDue = getNextDueDate(payingBill, pd);
     if (nextDue) {
-      // Calculate the FOLLOWING due date after this one
-      const tempBill = {
-        ...payingBill,
-        next_due_date: format(nextDue, "yyyy-MM-dd"),
-      };
-      // For payday-linked bills, advance by finding the next payday after this one
       let advancedDate: string | null = null;
+
       if (
         payingBill.schedule_type === "every_payday" ||
         payingBill.schedule_type === "every_other_payday"
       ) {
+        // For payday-linked bills, find the next payday after this one
         const step =
           payingBill.schedule_type === "every_other_payday" ? 2 : 1;
         const futurePd = pd.filter(
@@ -236,14 +232,10 @@ export default function CalendarPage() {
         if (futurePd.length >= step) {
           advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
         }
-      } else if (payingBill.schedule_type === "monthly") {
-        const next = addMonths(nextDue, payingBill.frequency === "quarterly" ? 3 : payingBill.frequency === "yearly" ? 12 : 1);
-        advancedDate = format(next, "yyyy-MM-dd");
-      } else if (payingBill.schedule_type === "weekly") {
-        advancedDate = format(addDays(nextDue, 7), "yyyy-MM-dd");
       } else {
-        // custom
-        advancedDate = format(addMonths(nextDue, 1), "yyyy-MM-dd");
+        // All fixed-interval types: use advanceBillDate
+        const next = advanceBillDate(nextDue, payingBill.schedule_type, payingBill.custom_interval_days);
+        advancedDate = format(next, "yyyy-MM-dd");
       }
 
       if (advancedDate) {

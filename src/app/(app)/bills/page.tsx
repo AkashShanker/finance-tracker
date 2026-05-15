@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import type { Bill, Profile, HouseholdMember, Debt } from "@/lib/types";
-import { getUpcomingPaydays, getNextDueDate, daysUntil, formatDueDate, getBillEvents } from "@/lib/payday";
+import { getUpcomingPaydays, getNextDueDate, daysUntil, formatDueDate, getBillEvents, advanceBillDate } from "@/lib/payday";
 import Modal from "@/components/Modal";
 import { Plus, Trash2, Pencil, ToggleLeft, ToggleRight, Calendar, List, ArrowRightLeft } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,10 +18,22 @@ const EMPTY_FORM = {
   next_due_date: "",
   frequency: "monthly" as Bill["frequency"],
   schedule_type: "monthly" as Bill["schedule_type"],
+  custom_interval_days: "" as string,
   paid_by: "" as string,
   debt_id: "" as string,
   category: "other",
   is_autopay: false,
+};
+
+const SCHEDULE_LABELS: Record<string, string> = {
+  monthly: "Monthly",
+  biweekly: "Biweekly (every 2 weeks)",
+  weekly: "Weekly",
+  quarterly: "Quarterly (every 3 months)",
+  yearly: "Yearly",
+  every_payday: "Every payday",
+  every_other_payday: "Every other payday",
+  custom: "Custom interval",
 };
 
 export default function BillsPage() {
@@ -85,6 +97,7 @@ export default function BillsPage() {
       next_due_date: bill.next_due_date || "",
       frequency: bill.frequency,
       schedule_type: bill.schedule_type || "monthly",
+      custom_interval_days: bill.custom_interval_days ? String(bill.custom_interval_days) : "",
       paid_by: bill.paid_by || "",
       debt_id: bill.debt_id || "",
       category: bill.category || "other",
@@ -106,6 +119,7 @@ export default function BillsPage() {
       next_due_date: form.next_due_date || null,
       frequency: form.frequency,
       schedule_type: form.schedule_type,
+      custom_interval_days: form.custom_interval_days ? parseInt(form.custom_interval_days) : null,
       paid_by: form.paid_by || null,
       debt_id: form.debt_id || null,
       category: form.category,
@@ -348,38 +362,39 @@ export default function BillsPage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1">Schedule Type</label>
+            <label className="block text-sm font-medium mb-1">Frequency</label>
             <select value={form.schedule_type} onChange={(e) => setForm({ ...form, schedule_type: e.target.value as Bill["schedule_type"] })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-              <option value="monthly">Fixed day of month</option>
+              <option value="monthly">Monthly (fixed day)</option>
+              <option value="biweekly">Biweekly (every 2 weeks)</option>
+              <option value="weekly">Weekly</option>
+              <option value="quarterly">Quarterly (every 3 months)</option>
+              <option value="yearly">Yearly</option>
               <option value="every_payday">Every payday</option>
               <option value="every_other_payday">Every other payday</option>
-              <option value="weekly">Weekly</option>
-              <option value="custom">Custom date</option>
+              <option value="custom">Custom interval</option>
             </select>
           </div>
 
-          {form.schedule_type === "monthly" && (
+          {(form.schedule_type === "monthly" || form.schedule_type === "quarterly" || form.schedule_type === "yearly") && (
             <div>
               <label className="block text-sm font-medium mb-1">Due Day of Month</label>
               <input type="number" min="1" max="31" value={form.due_day} onChange={(e) => setForm({ ...form, due_day: e.target.value })} placeholder="15" className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
           )}
 
-          {(form.schedule_type === "custom" || form.schedule_type === "weekly") && (
+          {(form.schedule_type === "biweekly" || form.schedule_type === "weekly" || form.schedule_type === "custom") && (
             <div>
               <label className="block text-sm font-medium mb-1">Next Due Date</label>
               <input type="date" value={form.next_due_date} onChange={(e) => setForm({ ...form, next_due_date: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+              <p className="text-xs text-muted mt-1">We&apos;ll calculate future dates from this starting point</p>
             </div>
           )}
 
-          {form.schedule_type === "monthly" && (
+          {form.schedule_type === "custom" && (
             <div>
-              <label className="block text-sm font-medium mb-1">Frequency</label>
-              <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value as Bill["frequency"] })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="yearly">Yearly</option>
-              </select>
+              <label className="block text-sm font-medium mb-1">Repeat Every (days)</label>
+              <input type="number" min="1" max="365" value={form.custom_interval_days} onChange={(e) => setForm({ ...form, custom_interval_days: e.target.value })} placeholder="e.g. 14 for biweekly, 10 for every 10 days" className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+              <p className="text-xs text-muted mt-1">How many days between each occurrence</p>
             </div>
           )}
 
@@ -449,8 +464,8 @@ function BillSection({
                     <span className="text-xs bg-gray-100 text-muted px-2 py-0.5 rounded-full">
                       {bill.schedule_type === "every_payday" ? "Every payday" :
                        bill.schedule_type === "every_other_payday" ? "Alt. payday" :
-                       bill.schedule_type === "weekly" ? "Weekly" :
-                       bill.frequency}
+                       bill.schedule_type === "custom" ? `Every ${bill.custom_interval_days || 30}d` :
+                       SCHEDULE_LABELS[bill.schedule_type] || bill.schedule_type}
                     </span>
                   </div>
                   <p className="text-sm text-muted mt-0.5">

@@ -47,7 +47,8 @@ export interface Bill {
   due_day: number | null;
   next_due_date: string | null;
   frequency: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
-  schedule_type: "monthly" | "every_payday" | "every_other_payday" | "weekly" | "custom";
+  schedule_type: "monthly" | "biweekly" | "weekly" | "quarterly" | "yearly" | "every_payday" | "every_other_payday" | "custom";
+  custom_interval_days: number | null;
   paid_by: string | null;
   debt_id: string | null;
   category: string;
