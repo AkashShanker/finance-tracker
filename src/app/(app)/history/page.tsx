@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getTodayString } from "@/lib/timezone";
 import type { Profile, Snapshot, SnapshotBalance, TrackedAccount } from "@/lib/types";
 import Modal from "@/components/Modal";
 import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
@@ -16,7 +17,7 @@ export default function HistoryPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    date: new Date().toISOString().split("T")[0],
+    date: getTodayString(),
     label: "",
     notes: "",
     balances: [] as Array<{ name: string; type: "asset" | "debt"; balance: string; sort_order: number }>,
@@ -68,7 +69,7 @@ export default function HistoryPage() {
     });
 
     setForm({
-      date: new Date().toISOString().split("T")[0],
+      date: getTodayString(),
       label: "",
       notes: "",
       balances,

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, daysUntilDue, getOrdinalDay } from "@/lib/format";
+import { getTodayString } from "@/lib/timezone";
 import type { Profile, Bill, Debt, Transaction } from "@/lib/types";
 import {
   TrendingUp,
@@ -52,9 +53,8 @@ export default function DashboardPage() {
         return;
       }
 
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      const monthStart = startOfMonth.toISOString().split("T")[0];
+      const todayStr = getTodayString(profile.timezone);
+      const monthStart = todayStr.slice(0, 7) + "-01";
 
       const [incomeRes, expenseRes, billsRes, debtsRes, recentRes] =
         await Promise.all([

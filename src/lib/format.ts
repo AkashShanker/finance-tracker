@@ -5,8 +5,10 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+import { getToday, parseLocalDate } from "./timezone";
+
 export function formatDate(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+  return parseLocalDate(date).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -19,8 +21,8 @@ export function getOrdinalDay(day: number): string {
   return day + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function daysUntilDue(dueDay: number): number {
-  const today = new Date();
+export function daysUntilDue(dueDay: number, timezone?: string): number {
+  const today = getToday(timezone);
   const currentDay = today.getDate();
   const daysInMonth = new Date(
     today.getFullYear(),

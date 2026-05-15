@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getTodayString } from "@/lib/timezone";
 import type { Transaction, Category, Profile } from "@/lib/types";
 import Modal from "@/components/Modal";
 import { Plus, Trash2 } from "lucide-react";
@@ -20,7 +21,7 @@ export default function TransactionsPage() {
     type: "expense" as "income" | "expense",
     category_id: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: getTodayString(),
   });
 
   useEffect(() => {
@@ -83,7 +84,7 @@ export default function TransactionsPage() {
       type: "expense",
       category_id: "",
       description: "",
-      date: new Date().toISOString().split("T")[0],
+      date: getTodayString(),
     });
     setModalOpen(false);
     load();

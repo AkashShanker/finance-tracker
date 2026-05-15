@@ -2,9 +2,10 @@
 
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Household, HouseholdMember, TrackedAccount } from "@/lib/types";
-import { Copy, Users, User, Plus, Trash2, Pencil, X, Check, GripVertical, AlertTriangle } from "lucide-react";
+import { Copy, Users, User, Plus, Trash2, Pencil, X, Check, GripVertical, AlertTriangle, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { TIMEZONE_OPTIONS } from "@/lib/timezone";
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -21,6 +22,7 @@ export default function SettingsPage() {
     display_name: "",
     pay_frequency: "biweekly" as Profile["pay_frequency"],
     next_pay_date: "",
+    timezone: "America/New_York",
   });
 
   // Add member
@@ -65,6 +67,7 @@ export default function SettingsPage() {
       display_name: prof.display_name || "",
       pay_frequency: prof.pay_frequency || "biweekly",
       next_pay_date: prof.next_pay_date || "",
+      timezone: prof.timezone || "America/New_York",
     });
 
     if (prof.household_id) {
@@ -89,6 +92,7 @@ export default function SettingsPage() {
       display_name: form.display_name || null,
       pay_frequency: form.pay_frequency,
       next_pay_date: form.next_pay_date || null,
+      timezone: form.timezone,
     }).eq("id", profile.id);
 
     // Also sync pay schedule to the user's household_member record
@@ -294,6 +298,15 @@ export default function SettingsPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Next Pay Date</label>
             <input type="date" value={form.next_pay_date} onChange={(e) => setForm({ ...form, next_pay_date: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1 flex items-center gap-1"><Globe size={14} /> Timezone</label>
+            <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted mt-1">Used for date calculations across the app</p>
           </div>
           {message && (
             <div className={`text-sm p-2 rounded-lg ${message.includes("Failed") ? "bg-red-50 text-danger" : "bg-green-50 text-success"}`}>{message}</div>

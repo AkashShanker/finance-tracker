@@ -5,6 +5,7 @@ export interface Profile {
   household_id: string | null;
   pay_frequency: "weekly" | "biweekly" | "monthly";
   next_pay_date: string | null;
+  timezone: string;
   created_at: string;
 }
 

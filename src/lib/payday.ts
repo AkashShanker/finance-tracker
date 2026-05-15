@@ -1,19 +1,25 @@
 import { addDays, addWeeks, addMonths, addQuarters, addYears, differenceInDays, format, startOfDay, isBefore, isEqual } from "date-fns";
+import { getToday, parseLocalDate } from "./timezone";
 
 export type PayFrequency = "weekly" | "biweekly" | "monthly";
 export type ScheduleType = "monthly" | "every_payday" | "every_other_payday" | "weekly" | "custom";
 
 /**
  * Generate upcoming paydays from a known payday date and frequency.
- * Returns the next N paydays from today.
+ * Returns the next N paydays from today (timezone-aware).
  */
 export function getUpcomingPaydays(
   lastPayday: string | Date,
   frequency: PayFrequency,
-  count: number = 12
+  count: number = 12,
+  timezone?: string
 ): Date[] {
-  const today = startOfDay(new Date());
-  let current = startOfDay(new Date(lastPayday));
+  const today = getToday(timezone);
+  let current = startOfDay(
+    typeof lastPayday === "string"
+      ? parseLocalDate(lastPayday)
+      : lastPayday
+  );
 
   // Walk forward to find the first payday on or after today
   while (isBefore(current, today)) {
@@ -44,11 +50,11 @@ export function getNextDueDate(bill: {
   next_due_date: string | null;
   due_day: number | null;
   frequency: string;
-}, paydays: Date[]): Date | null {
-  const today = startOfDay(new Date());
+}, paydays: Date[], timezone?: string): Date | null {
+  const today = getToday(timezone);
 
   if (bill.schedule_type === "every_payday") {
-    // Due on the next upcoming payday
+    // Due on the next upcoming payday (including today)
     return paydays.find((d) => !isBefore(d, today)) || null;
   }
 
@@ -56,13 +62,11 @@ export function getNextDueDate(bill: {
     // Due every other payday — use first, third, fifth... payday
     const upcoming = paydays.filter((d) => !isBefore(d, today));
     return upcoming.length > 0 ? upcoming[0] : null;
-    // Note: the "alternating" is tracked by next_due_date in DB.
-    // When user marks paid, we skip one payday.
   }
 
   if (bill.schedule_type === "weekly") {
     if (bill.next_due_date) {
-      let due = startOfDay(new Date(bill.next_due_date + "T00:00:00"));
+      let due = parseLocalDate(bill.next_due_date);
       while (isBefore(due, today)) {
         due = addWeeks(due, 1);
       }
@@ -73,7 +77,7 @@ export function getNextDueDate(bill: {
 
   // monthly / custom — use next_due_date or calculate from due_day
   if (bill.next_due_date) {
-    const due = startOfDay(new Date(bill.next_due_date + "T00:00:00"));
+    const due = parseLocalDate(bill.next_due_date);
     if (!isBefore(due, today)) return due;
 
     // Advance based on frequency
@@ -107,8 +111,8 @@ function advanceByFrequency(date: Date, frequency: string): Date {
 /**
  * Get days until a date from today.
  */
-export function daysUntil(date: Date): number {
-  return differenceInDays(startOfDay(date), startOfDay(new Date()));
+export function daysUntil(date: Date, timezone?: string): number {
+  return differenceInDays(startOfDay(date), getToday(timezone));
 }
 
 /**
@@ -134,9 +138,10 @@ export function getBillEvents(
     paid_by: string;
   }>,
   paydays: Date[],
-  daysAhead: number = 60
+  daysAhead: number = 60,
+  timezone?: string
 ): Array<{ date: Date; billId: string; name: string; amount: number; is_autopay: boolean; paid_by: string }> {
-  const today = startOfDay(new Date());
+  const today = getToday(timezone);
   const end = addDays(today, daysAhead);
   const events: Array<{ date: Date; billId: string; name: string; amount: number; is_autopay: boolean; paid_by: string }> = [];
 
@@ -154,7 +159,7 @@ export function getBillEvents(
       }
     } else {
       // Fixed schedule — walk forward from next_due_date
-      let due = getNextDueDate(bill, paydays);
+      let due = getNextDueDate(bill, paydays, timezone);
       if (!due) continue;
       let iterations = 0;
       while (isBefore(due, end) && iterations < 12) {
