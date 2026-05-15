@@ -14,6 +14,7 @@ import {
   X,
   History,
   BarChart3,
+  CalendarDays,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/bills", label: "Bills", icon: Receipt },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/debts", label: "Debts", icon: CreditCard },
   { href: "/history", label: "History", icon: History },
   { href: "/charts", label: "Charts", icon: BarChart3 },

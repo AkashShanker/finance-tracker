@@ -214,34 +214,39 @@ export default function SettingsPage() {
           {activeMembers.map((m) => (
             <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
               {editingMemberId === m.id ? (
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
+                <div className="flex-1 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted">Editing Member</span>
+                    <button onClick={() => setEditingMemberId(null)} className="p-1 text-muted hover:text-foreground"><X size={16} /></button>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted mb-0.5">Name</label>
                     <input
                       type="text"
                       value={editMemberName}
                       onChange={(e) => setEditMemberName(e.target.value)}
                       placeholder="Name"
-                      className="flex-1 px-2 py-1 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-2 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       autoFocus
-                      onKeyDown={(e) => e.key === "Enter" && updateMember(m.id)}
                     />
-                    <button onClick={() => updateMember(m.id)} className="p-1 text-success"><Check size={16} /></button>
-                    <button onClick={() => setEditingMemberId(null)} className="p-1 text-muted"><X size={16} /></button>
                   </div>
-                  <input
-                    type="email"
-                    value={editMemberEmail}
-                    onChange={(e) => setEditMemberEmail(e.target.value)}
-                    placeholder="Email (for auto-linking on signup)"
-                    className="w-full px-2 py-1 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
+                  <div>
+                    <label className="block text-xs text-muted mb-0.5">Email <span className="font-normal">(for auto-linking on signup)</span></label>
+                    <input
+                      type="email"
+                      value={editMemberEmail}
+                      onChange={(e) => setEditMemberEmail(e.target.value)}
+                      placeholder="Email address"
+                      className="w-full px-2 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-muted mb-0.5">Pay Frequency</label>
                       <select
                         value={editMemberPayFreq}
                         onChange={(e) => setEditMemberPayFreq(e.target.value)}
-                        className="w-full px-2 py-1 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-2 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         <option value="">Not set</option>
                         <option value="weekly">Weekly</option>
@@ -255,9 +260,17 @@ export default function SettingsPage() {
                         type="date"
                         value={editMemberPayDate}
                         onChange={(e) => setEditMemberPayDate(e.target.value)}
-                        className="w-full px-2 py-1 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-2 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                     </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => updateMember(m.id)} className="px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium">
+                      Save Member
+                    </button>
+                    <button onClick={() => setEditingMemberId(null)} className="px-4 py-1.5 border border-border rounded-lg text-sm hover:bg-gray-50">
+                      Cancel
+                    </button>
                   </div>
                 </div>
               ) : (

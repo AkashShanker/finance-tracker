@@ -12,7 +12,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 ## Architecture
 - See ARCHITECTURE.md for full documentation
 - `src/app/(auth)/` — login, signup pages (no sidebar)
-- `src/app/(app)/` — all app pages (with sidebar)
+- `src/app/(app)/` — all app pages (with sidebar, including /calendar for consolidated pay view)
 - `src/lib/supabase/` — client.ts (browser), server.ts (SSR), middleware.ts (auth)
 - `src/lib/types.ts` — all TypeScript interfaces
 - `src/lib/payday.ts` — payday schedule calculator
@@ -34,6 +34,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - `supabase-members-accounts.sql` — household_members + tracked_accounts (DONE)
 - `supabase-member-email.sql` — email field on household_members (NEEDS TO BE RUN)
 - `supabase-member-pay.sql` — pay_frequency + next_pay_date on household_members (NEEDS TO BE RUN)
+- `supabase-bill-debt-link.sql` — debt_id on bills for linking bills to debts (NEEDS TO BE RUN)
 - `import-data.sql` — initial bills + debts from Excel (DONE)
 - `import-history.sql` — 4 historical snapshots from Excel (DONE)
 
@@ -44,12 +45,14 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - Bills page computes paydays per member — "every_payday" bills use the assigned member's schedule
 - Profile pay settings sync to the user's household_member record on save
 - Member email enables auto-linking: on signup with invite code, if email matches a member, profile_id is set
+- Bills can be linked to debts via debt_id — marking a bill paid on Calendar updates the debt balance
+- Calendar page is the consolidated pay hub: shows all bills/paydays, mark-as-paid with custom amounts, debt balance adjustment
 - tracked_accounts are configurable from Settings (not hardcoded)
 - Claude integration works by formatting financial context and opening claude.ai (free, no API key)
 - RLS policies on all tables scoped to household_id
 
 ## What's Left / Next Steps
-- Run `supabase-member-email.sql` and `supabase-member-pay.sql` in Supabase SQL Editor
+- Run 3 SQL migrations in Supabase SQL Editor: `supabase-member-email.sql`, `supabase-member-pay.sql`, `supabase-bill-debt-link.sql`
 - Deploy to Vercel so wife can access remotely
 - Connect tracked_accounts to debts table so adding a debt in one place reflects in both (history snapshots + payoff tracking)
 - Future: more charts, budget planning page, recurring transaction automation, payday checklist page
