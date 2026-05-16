@@ -42,6 +42,9 @@ export default function CalendarPage() {
   const [calMonth, setCalMonth] = useState(new Date());
   const [viewMode, setViewMode] = useState<"calendar" | "upcoming">("calendar");
 
+  // Paid tracking: set of "billId|YYYY-MM-DD" keys
+  const [paidKeys, setPaidKeys] = useState<Set<string>>(new Set());
+
   // Pay modal
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payingBill, setPayingBill] = useState<Bill | null>(null);
@@ -51,6 +54,11 @@ export default function CalendarPage() {
   const [payNotes, setPayNotes] = useState("");
   const [paying, setPaying] = useState(false);
   const [paySuccess, setPaySuccess] = useState("");
+
+  // Undo modal
+  const [undoModalOpen, setUndoModalOpen] = useState(false);
+  const [undoEvent, setUndoEvent] = useState<BillEvent | null>(null);
+  const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
     load();
@@ -71,7 +79,7 @@ export default function CalendarPage() {
     if (!prof?.household_id) return;
     setProfile(prof);
 
-    const [billsRes, membersRes, debtsRes] = await Promise.all([
+    const [billsRes, membersRes, debtsRes, txRes] = await Promise.all([
       supabase
         .from("bills")
         .select("*")
@@ -90,11 +98,31 @@ export default function CalendarPage() {
         .eq("household_id", prof.household_id)
         .eq("is_active", true)
         .order("name"),
+      // Fetch bill payment transactions to track paid status
+      supabase
+        .from("transactions")
+        .select("description, date")
+        .eq("household_id", prof.household_id)
+        .eq("type", "expense")
+        .like("description", "Bill:%"),
     ]);
 
     setBills(billsRes.data || []);
     setMembers(membersRes.data || []);
     setDebts(debtsRes.data || []);
+
+    // Build paid keys from existing transactions
+    // Transaction description format: "Bill: {bill_name}" or "Bill: {bill_name} — notes"
+    const fetchedBills = billsRes.data || [];
+    const keys = new Set<string>();
+    for (const tx of txRes.data || []) {
+      const billName = tx.description?.replace(/^Bill:\s*/, "").split(" — ")[0];
+      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
+      if (matchedBill && tx.date) {
+        keys.add(`${matchedBill.id}|${tx.date}`);
+      }
+    }
+    setPaidKeys(keys);
     setLoading(false);
   }
 
@@ -147,6 +175,78 @@ export default function CalendarPage() {
       );
     })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Undo a payment: delete the matching transaction, revert bill next_due_date
+  function openUndo(event: BillEvent) {
+    setUndoEvent(event);
+    setUndoModalOpen(true);
+  }
+
+  async function handleUndo() {
+    if (!undoEvent || !profile?.household_id) return;
+    setUndoing(true);
+
+    try {
+      const supabase = createClient();
+      const bill = bills.find((b) => b.id === undoEvent.billId);
+      const dateStr = format(undoEvent.date, "yyyy-MM-dd");
+
+      // Find and delete the matching transaction
+      const { data: matchingTx } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("household_id", profile.household_id)
+        .eq("type", "expense")
+        .eq("date", dateStr)
+        .like("description", `Bill: ${bill?.name || ""}%`)
+        .limit(1);
+
+      if (matchingTx && matchingTx.length > 0) {
+        const { error: delError } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("id", matchingTx[0].id);
+
+        if (delError) {
+          console.error("Failed to delete transaction:", delError);
+        }
+      }
+
+      // Revert bill's next_due_date back to the event date
+      if (bill) {
+        await supabase
+          .from("bills")
+          .update({ next_due_date: dateStr })
+          .eq("id", bill.id);
+      }
+
+      // Remove from local paid set
+      setPaidKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(`${undoEvent.billId}|${dateStr}`);
+        return next;
+      });
+
+      setUndoModalOpen(false);
+      setUndoEvent(null);
+      load();
+    } catch (err) {
+      console.error("Undo error:", err);
+    } finally {
+      setUndoing(false);
+    }
+  }
+
+  // Check if a bill event is paid
+  function isEventPaid(billId: string, date: Date): boolean {
+    return paidKeys.has(`${billId}|${format(date, "yyyy-MM-dd")}`);
+  }
+
+  // Check if an event is overdue (unpaid and date is before today)
+  function isEventOverdue(billId: string, date: Date): boolean {
+    const today = startOfDay(new Date());
+    return !isEventPaid(billId, date) && isBefore(date, today);
+  }
 
   function getMemberName(memberId: string | null): string {
     if (!memberId || memberId === "shared") return "Shared";
@@ -282,6 +382,13 @@ export default function CalendarPage() {
         }
       }
 
+      // Mark as paid locally for immediate UI update
+      setPaidKeys((prev) => {
+        const next = new Set(prev);
+        next.add(`${payingBill.id}|${payDate}`);
+        return next;
+      });
+
       setPaying(false);
       setPaySuccess(
         `Paid ${formatCurrency(amount)} for ${payingBill.name}${payingBill.debt_id ? ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}` : ""}`
@@ -344,8 +451,11 @@ export default function CalendarPage() {
           getMemberName={getMemberName}
           getMemberColor={getMemberColor}
           onPayClick={openPay}
+          onUndoClick={openUndo}
           bills={bills}
           debts={debts}
+          isEventPaid={isEventPaid}
+          isEventOverdue={isEventOverdue}
         />
       ) : (
         <UpcomingList
@@ -353,8 +463,11 @@ export default function CalendarPage() {
           getMemberName={getMemberName}
           getMemberColor={getMemberColor}
           onPayClick={openPay}
+          onUndoClick={openUndo}
           bills={bills}
           debts={debts}
+          isEventPaid={isEventPaid}
+          isEventOverdue={isEventOverdue}
         />
       )}
 
@@ -516,6 +629,38 @@ export default function CalendarPage() {
           </form>
         )}
       </Modal>
+
+      {/* Undo Payment Modal */}
+      <Modal
+        open={undoModalOpen}
+        onClose={() => { setUndoModalOpen(false); setUndoEvent(null); }}
+        title="Undo Payment"
+      >
+        <div className="space-y-4">
+          <p className="text-sm">
+            Are you sure you want to undo the payment for <strong>{undoEvent ? bills.find((b) => b.id === undoEvent.billId)?.name : ""}</strong> on{" "}
+            <strong>{undoEvent ? format(undoEvent.date, "MMM d, yyyy") : ""}</strong>?
+          </p>
+          <p className="text-sm text-muted">
+            This will delete the expense transaction and set the bill&apos;s next due date back to this date.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setUndoModalOpen(false); setUndoEvent(null); }}
+              className="flex-1 py-2 px-4 border border-border rounded-lg hover:bg-gray-50 font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUndo}
+              disabled={undoing}
+              className="flex-1 py-2 px-4 bg-danger text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
+            >
+              {undoing ? "Undoing..." : "Undo Payment"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -530,8 +675,11 @@ function CalendarGrid({
   getMemberName,
   getMemberColor,
   onPayClick,
+  onUndoClick,
   bills,
   debts,
+  isEventPaid,
+  isEventOverdue,
 }: {
   calMonth: Date;
   setCalMonth: (d: Date) => void;
@@ -540,8 +688,11 @@ function CalendarGrid({
   getMemberName: (id: string | null) => string;
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
+  onUndoClick: (event: BillEvent) => void;
   bills: Bill[];
   debts: Debt[];
+  isEventPaid: (billId: string, date: Date) => boolean;
+  isEventOverdue: (billId: string, date: Date) => boolean;
 }) {
   const monthStart = startOfMonth(calMonth);
   const monthEnd = endOfMonth(calMonth);
@@ -633,22 +784,25 @@ function CalendarGrid({
                 </div>
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((evt, j) => {
-                    const bill = bills.find((b) => b.id === evt.billId);
-                    const isDebtBill = bill?.debt_id;
+                    const paid = isEventPaid(evt.billId, evt.date);
+                    const overdue = isEventOverdue(evt.billId, evt.date);
                     return (
                       <div
                         key={`${evt.billId}-${j}`}
                         className={`text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
-                          isDebtBill
-                            ? "bg-red-50 text-red-700"
+                          paid
+                            ? "bg-green-100 text-green-700 line-through opacity-70"
+                            : overdue
+                            ? "bg-red-100 text-red-700 font-medium"
                             : evt.is_autopay
                             ? "bg-green-50 text-green-700"
                             : getMemberColor(evt.paid_by)
                         }`}
-                        title={`${evt.name}: ${formatCurrency(evt.amount)} (${getMemberName(evt.paid_by)})`}
+                        title={`${evt.name}: ${formatCurrency(evt.amount)} (${getMemberName(evt.paid_by)})${paid ? " ✓ Paid" : overdue ? " ⚠ Overdue" : ""}`}
                       >
-                        {evt.name.length > 12
-                          ? evt.name.slice(0, 12) + "…"
+                        {paid ? "✓ " : overdue ? "! " : ""}
+                        {evt.name.length > (paid || overdue ? 10 : 12)
+                          ? evt.name.slice(0, paid || overdue ? 10 : 12) + "…"
                           : evt.name}
                       </div>
                     );
@@ -672,12 +826,16 @@ function CalendarGrid({
         {/* Legend */}
         <div className="flex gap-4 mt-3 text-xs text-muted flex-wrap">
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-blue-50 border border-blue-200 rounded" />{" "}
-            Bills
+            <div className="w-3 h-3 bg-green-100 border border-green-300 rounded" />{" "}
+            Paid
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-red-50 border border-red-200 rounded" />{" "}
-            Debt Payments
+            <div className="w-3 h-3 bg-red-100 border border-red-300 rounded" />{" "}
+            Overdue
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 bg-blue-50 border border-blue-200 rounded" />{" "}
+            Upcoming
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-green-50 border border-green-200 rounded" />{" "}
@@ -700,8 +858,11 @@ function CalendarGrid({
           getMemberName={getMemberName}
           getMemberColor={getMemberColor}
           onPayClick={onPayClick}
+          onUndoClick={onUndoClick}
           bills={bills}
           debts={debts}
+          isEventPaid={isEventPaid}
+          isEventOverdue={isEventOverdue}
           onClose={() => setSelectedDay(null)}
         />
       )}
@@ -717,8 +878,11 @@ function DayDetail({
   getMemberName,
   getMemberColor,
   onPayClick,
+  onUndoClick,
   bills,
   debts,
+  isEventPaid,
+  isEventOverdue,
   onClose,
 }: {
   day: Date;
@@ -726,8 +890,11 @@ function DayDetail({
   getMemberName: (id: string | null) => string;
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
+  onUndoClick: (event: BillEvent) => void;
   bills: Bill[];
   debts: Debt[];
+  isEventPaid: (billId: string, date: Date) => boolean;
+  isEventOverdue: (billId: string, date: Date) => boolean;
   onClose: () => void;
 }) {
   const total = events.reduce((sum, e) => sum + e.amount, 0);
@@ -756,15 +923,19 @@ function DayDetail({
           const linkedDebt = bill?.debt_id
             ? debts.find((d) => d.id === bill.debt_id)
             : null;
+          const paid = isEventPaid(evt.billId, evt.date);
+          const overdue = isEventOverdue(evt.billId, evt.date);
 
           return (
             <div
               key={`${evt.billId}-${i}`}
-              className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
+              className={`flex items-center justify-between rounded-lg p-3 ${
+                paid ? "bg-green-50" : overdue ? "bg-red-50" : "bg-gray-50"
+              }`}
             >
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium">{evt.name}</span>
+                  <span className={`font-medium ${paid ? "line-through text-muted" : ""}`}>{evt.name}</span>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${getMemberColor(evt.paid_by)}`}
                   >
@@ -783,15 +954,32 @@ function DayDetail({
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-semibold">
+                <span className={`font-semibold ${paid ? "line-through text-muted" : ""}`}>
                   {formatCurrency(evt.amount)}
                 </span>
-                <button
-                  onClick={() => onPayClick(evt)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-success text-white rounded-lg hover:opacity-90 text-sm font-medium"
-                >
-                  <Check size={14} /> Pay
-                </button>
+                {paid ? (
+                  <button
+                    onClick={() => onUndoClick(evt)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+                    title="Click to undo payment"
+                  >
+                    <Check size={14} /> Paid
+                  </button>
+                ) : overdue ? (
+                  <button
+                    onClick={() => onPayClick(evt)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
+                  >
+                    <Check size={14} /> Pay
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onPayClick(evt)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium"
+                  >
+                    <Check size={14} /> Pay
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -808,15 +996,21 @@ function UpcomingList({
   getMemberName,
   getMemberColor,
   onPayClick,
+  onUndoClick,
   bills,
   debts,
+  isEventPaid,
+  isEventOverdue,
 }: {
   events: BillEvent[];
   getMemberName: (id: string | null) => string;
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
+  onUndoClick: (event: BillEvent) => void;
   bills: Bill[];
   debts: Debt[];
+  isEventPaid: (billId: string, date: Date) => boolean;
+  isEventOverdue: (billId: string, date: Date) => boolean;
 }) {
   // Group by date
   const grouped = new Map<string, BillEvent[]>();
@@ -875,15 +1069,17 @@ function UpcomingList({
                   const linkedDebt = bill?.debt_id
                     ? debts.find((d) => d.id === bill.debt_id)
                     : null;
+                  const paid = isEventPaid(evt.billId, evt.date);
+                  const overdue = isEventOverdue(evt.billId, evt.date);
 
                   return (
                     <div
                       key={`${evt.billId}-${i}`}
-                      className="flex items-center justify-between p-4"
+                      className={`flex items-center justify-between p-4 ${paid ? "bg-green-50/50" : overdue ? "bg-red-50/50" : ""}`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{evt.name}</span>
+                          <span className={`font-medium ${paid ? "line-through text-muted" : ""}`}>{evt.name}</span>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${getMemberColor(evt.paid_by)}`}
                           >
@@ -902,15 +1098,32 @@ function UpcomingList({
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-semibold">
+                        <span className={`font-semibold ${paid ? "line-through text-muted" : ""}`}>
                           {formatCurrency(evt.amount)}
                         </span>
-                        <button
-                          onClick={() => onPayClick(evt)}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-success text-white rounded-lg hover:opacity-90 text-sm font-medium"
-                        >
-                          <Check size={14} /> Pay
-                        </button>
+                        {paid ? (
+                          <button
+                            onClick={() => onUndoClick(evt)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+                            title="Click to undo payment"
+                          >
+                            <Check size={14} /> Paid
+                          </button>
+                        ) : overdue ? (
+                          <button
+                            onClick={() => onPayClick(evt)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
+                          >
+                            <Check size={14} /> Pay
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onPayClick(evt)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium"
+                          >
+                            <Check size={14} /> Pay
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
