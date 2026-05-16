@@ -54,6 +54,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 | 14 | import-data.sql | Initial bills + debts from Excel | DONE |
 | 15 | import-history.sql | 4 historical snapshots from Excel | DONE |
 | 16 | supabase-bill-frequency.sql | Expand schedule_type + custom_interval_days | NEEDS RUN |
+| 17 | supabase-readable-invite-code.sql | Human-readable invite codes | NEEDS RUN |
 
 ## RPC Functions (security definer, bypass RLS)
 - `seed_default_categories(h_id)` — seeds 14 default categories for new household

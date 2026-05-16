@@ -15,6 +15,8 @@ import {
   History,
   BarChart3,
   CalendarDays,
+  Copy,
+  Check,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -46,6 +48,13 @@ function stringToColor(str: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Format invite code for readability: "a3f7b2c1" -> "A3F7-B2C1"
+function formatInviteCode(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper.length <= 4) return upper;
+  return upper.slice(0, 4) + "-" + upper.slice(4);
+}
+
 function getInitials(name: string | null, email: string): string {
   if (name) {
     const parts = name.trim().split(/\s+/);
@@ -61,6 +70,9 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
+  const [householdName, setHouseholdName] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -70,13 +82,33 @@ export default function Sidebar() {
       setUserEmail(user.email || "");
       const { data: prof } = await supabase
         .from("profiles")
-        .select("display_name")
+        .select("display_name, household_id")
         .eq("id", user.id)
         .single();
-      if (prof) setUserName(prof.display_name);
+      if (prof) {
+        setUserName(prof.display_name);
+        if (prof.household_id) {
+          const { data: household } = await supabase
+            .from("households")
+            .select("name, invite_code")
+            .eq("id", prof.household_id)
+            .single();
+          if (household) {
+            setHouseholdName(household.name);
+            setInviteCode(household.invite_code);
+          }
+        }
+      }
     }
     loadUser();
   }, []);
+
+  function copyInviteCode() {
+    if (!inviteCode) return;
+    navigator.clipboard.writeText(inviteCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -116,9 +148,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* User profile + sign out */}
+      {/* User profile + household code + sign out */}
       <div className="p-3 border-t border-white/10">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-4 py-2">
           <div className={`w-9 h-9 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
             {initials}
           </div>
@@ -127,6 +159,25 @@ export default function Sidebar() {
             {userName && <p className="text-xs text-slate-400 truncate">{userEmail}</p>}
           </div>
         </div>
+
+        {/* Household invite code */}
+        {inviteCode && (
+          <button
+            onClick={copyInviteCode}
+            className="flex items-center gap-2 px-4 py-1.5 w-full text-left group"
+            title="Click to copy invite code"
+          >
+            <span className="text-[11px] text-slate-500 truncate">
+              {householdName || "Household"}: <span className="font-mono text-slate-300 tracking-wider">{formatInviteCode(inviteCode)}</span>
+            </span>
+            {codeCopied ? (
+              <Check size={12} className="text-success shrink-0" />
+            ) : (
+              <Copy size={12} className="text-slate-500 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
+            )}
+          </button>
+        )}
+
         <button
           onClick={handleSignOut}
           className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-sidebar-hover hover:text-white w-full transition-colors"

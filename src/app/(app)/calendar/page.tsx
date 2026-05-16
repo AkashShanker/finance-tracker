@@ -194,74 +194,106 @@ export default function CalendarPage() {
     e.preventDefault();
     if (!payingBill || !profile?.household_id) return;
     setPaying(true);
+    setPaySuccess("");
 
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const amount = parseFloat(payAmount);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setPaySuccess("Error: Not logged in");
+        setPaying(false);
+        return;
+      }
 
-    // 1. Create expense transaction
-    await supabase.from("transactions").insert({
-      household_id: profile.household_id,
-      user_id: user?.id,
-      amount,
-      type: "expense",
-      description: `Bill: ${payingBill.name}${payNotes ? ` — ${payNotes}` : ""}`,
-      date: payingDate
+      const amount = parseFloat(payAmount);
+      const payDate = payingDate
         ? format(payingDate, "yyyy-MM-dd")
-        : format(new Date(), "yyyy-MM-dd"),
-    });
+        : format(new Date(), "yyyy-MM-dd");
 
-    // 2. Advance bill's next_due_date
-    const pd = getPaydaysForBill(payingBill);
-    const nextDue = getNextDueDate(payingBill, pd);
-    if (nextDue) {
-      let advancedDate: string | null = null;
+      // 1. Create expense transaction
+      const { error: txError } = await supabase.from("transactions").insert({
+        household_id: profile.household_id,
+        user_id: user.id,
+        amount,
+        type: "expense",
+        description: `Bill: ${payingBill.name}${payNotes ? ` — ${payNotes}` : ""}`,
+        date: payDate,
+      });
 
-      if (
-        payingBill.schedule_type === "every_payday" ||
-        payingBill.schedule_type === "every_other_payday"
-      ) {
-        // For payday-linked bills, find the next payday after this one
-        const step =
-          payingBill.schedule_type === "every_other_payday" ? 2 : 1;
-        const futurePd = pd.filter(
-          (d) => d.getTime() > nextDue.getTime()
-        );
-        if (futurePd.length >= step) {
-          advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
+      if (txError) {
+        setPaySuccess(`Error recording transaction: ${txError.message}`);
+        setPaying(false);
+        return;
+      }
+
+      // 2. Advance bill's next_due_date
+      const pd = getPaydaysForBill(payingBill);
+      const nextDue = getNextDueDate(payingBill, pd);
+      if (nextDue) {
+        let advancedDate: string | null = null;
+
+        if (
+          payingBill.schedule_type === "every_payday" ||
+          payingBill.schedule_type === "every_other_payday"
+        ) {
+          // For payday-linked bills, find the next payday after this one
+          const step =
+            payingBill.schedule_type === "every_other_payday" ? 2 : 1;
+          const futurePd = pd.filter(
+            (d) => d.getTime() > nextDue.getTime()
+          );
+          if (futurePd.length >= step) {
+            advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
+          }
+        } else {
+          // All fixed-interval types: use advanceBillDate
+          const next = advanceBillDate(
+            nextDue,
+            payingBill.schedule_type,
+            payingBill.custom_interval_days
+          );
+          advancedDate = format(next, "yyyy-MM-dd");
         }
-      } else {
-        // All fixed-interval types: use advanceBillDate
-        const next = advanceBillDate(nextDue, payingBill.schedule_type, payingBill.custom_interval_days);
-        advancedDate = format(next, "yyyy-MM-dd");
+
+        if (advancedDate) {
+          const { error: billError } = await supabase
+            .from("bills")
+            .update({ next_due_date: advancedDate })
+            .eq("id", payingBill.id);
+
+          if (billError) {
+            console.error("Failed to advance bill date:", billError);
+          }
+        }
       }
 
-      if (advancedDate) {
-        await supabase
-          .from("bills")
-          .update({ next_due_date: advancedDate })
-          .eq("id", payingBill.id);
+      // 3. Update linked debt balance if applicable
+      if (payingBill.debt_id && payNewDebtBalance !== "") {
+        const newBalance = parseFloat(payNewDebtBalance);
+        const { error: debtError } = await supabase
+          .from("debts")
+          .update({ current_balance: newBalance })
+          .eq("id", payingBill.debt_id);
+
+        if (debtError) {
+          console.error("Failed to update debt balance:", debtError);
+        }
       }
+
+      setPaying(false);
+      setPaySuccess(
+        `Paid ${formatCurrency(amount)} for ${payingBill.name}${payingBill.debt_id ? ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}` : ""}`
+      );
+
+      // Reload data
+      load();
+    } catch (err) {
+      console.error("Payment error:", err);
+      setPaying(false);
+      setPaySuccess(`Error: ${err instanceof Error ? err.message : "Something went wrong"}`);
     }
-
-    // 3. Update linked debt balance if applicable
-    if (payingBill.debt_id && payNewDebtBalance !== "") {
-      const newBalance = parseFloat(payNewDebtBalance);
-      await supabase
-        .from("debts")
-        .update({ current_balance: newBalance })
-        .eq("id", payingBill.debt_id);
-    }
-
-    setPaying(false);
-    setPaySuccess(
-      `Paid ${formatCurrency(amount)} for ${payingBill.name}${payingBill.debt_id ? ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}` : ""}`
-    );
-
-    // Reload data
-    load();
   }
 
   if (loading) {
@@ -330,11 +362,11 @@ export default function CalendarPage() {
       <Modal
         open={payModalOpen}
         onClose={() => setPayModalOpen(false)}
-        title={paySuccess ? "Payment Recorded" : `Pay: ${payingBill?.name || ""}`}
+        title={paySuccess ? (paySuccess.startsWith("Error") ? "Payment Failed" : "Payment Recorded") : `Pay: ${payingBill?.name || ""}`}
       >
         {paySuccess ? (
           <div className="space-y-4">
-            <div className="bg-green-50 text-success p-4 rounded-lg text-center">
+            <div className={`${paySuccess.startsWith("Error") ? "bg-red-50 text-danger" : "bg-green-50 text-success"} p-4 rounded-lg text-center`}>
               <Check size={32} className="mx-auto mb-2" />
               <p className="font-medium">{paySuccess}</p>
             </div>
