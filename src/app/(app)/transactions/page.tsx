@@ -389,13 +389,13 @@ export default function TransactionsPage() {
                   </span>
                   <button
                     onClick={() => openEdit(tx)}
-                    className="p-1 text-muted hover:text-primary rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="p-1 text-muted hover:text-primary rounded"
                   >
                     <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => handleDelete(tx.id)}
-                    className="p-1 text-muted hover:text-danger rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="p-1 text-muted hover:text-danger rounded"
                   >
                     <Trash2 size={16} />
                   </button>
