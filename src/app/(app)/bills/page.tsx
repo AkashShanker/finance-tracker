@@ -317,12 +317,34 @@ export default function BillsPage() {
         ? format(payingDate, "yyyy-MM-dd")
         : format(new Date(), "yyyy-MM-dd");
 
-      // 1. Create expense transaction
+      // 1. Find or create "Bills" category
+      let billsCategoryId: string | null = null;
+      const { data: existingCat } = await supabase
+        .from("categories")
+        .select("id")
+        .eq("household_id", profile.household_id)
+        .eq("name", "Bills")
+        .eq("type", "expense")
+        .single();
+
+      if (existingCat) {
+        billsCategoryId = existingCat.id;
+      } else {
+        const { data: newCat } = await supabase
+          .from("categories")
+          .insert({ household_id: profile.household_id, name: "Bills", type: "expense", icon: "🧾" })
+          .select("id")
+          .single();
+        if (newCat) billsCategoryId = newCat.id;
+      }
+
+      // 2. Create expense transaction
       const { error: txError } = await supabase.from("transactions").insert({
         household_id: profile.household_id,
         user_id: user.id,
         amount,
         type: "expense",
+        category_id: billsCategoryId,
         description: `Bill: ${payingBill.name}${payNotes ? ` — ${payNotes}` : ""}`,
         date: payDate,
       });
@@ -333,7 +355,7 @@ export default function BillsPage() {
         return;
       }
 
-      // 2. Advance bill's next_due_date
+      // 3. Advance bill's next_due_date
       const pd = getPaydaysForBill(payingBill);
       const nextDue = getNextDueDate(payingBill, pd);
       if (nextDue) {
