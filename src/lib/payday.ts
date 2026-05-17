@@ -1,4 +1,4 @@
-import { addDays, addWeeks, addMonths, addQuarters, addYears, differenceInDays, format, startOfDay, isBefore, isEqual } from "date-fns";
+import { addDays, addWeeks, addMonths, addQuarters, addYears, subDays, subWeeks, subMonths, subQuarters, subYears, differenceInDays, format, startOfDay, isBefore, isEqual } from "date-fns";
 import { getToday, parseLocalDate } from "./timezone";
 
 export type PayFrequency = "weekly" | "biweekly" | "monthly";
@@ -46,6 +46,20 @@ function advancePayday(date: Date, frequency: PayFrequency): Date {
  * Advance a bill's due date based on its schedule_type.
  * Used after marking a bill as paid, and for calendar event generation.
  */
+export function reverseBillDate(date: Date, scheduleType: ScheduleType, customIntervalDays?: number | null): Date {
+  switch (scheduleType) {
+    case "weekly": return subWeeks(date, 1);
+    case "biweekly": return subWeeks(date, 2);
+    case "monthly": return subMonths(date, 1);
+    case "quarterly": return subQuarters(date, 1);
+    case "yearly": return subYears(date, 1);
+    case "custom":
+      return subDays(date, customIntervalDays && customIntervalDays > 0 ? customIntervalDays : 30);
+    default:
+      return subMonths(date, 1);
+  }
+}
+
 export function advanceBillDate(date: Date, scheduleType: ScheduleType, customIntervalDays?: number | null): Date {
   switch (scheduleType) {
     case "weekly": return addWeeks(date, 1);
@@ -138,33 +152,49 @@ export function getBillEvents(
   }>,
   paydays: Date[],
   daysAhead: number = 60,
-  timezone?: string
+  timezone?: string,
+  lookbackDays: number = 0
 ): Array<{ date: Date; billId: string; name: string; amount: number; is_autopay: boolean; paid_by: string }> {
   const today = getToday(timezone);
   const end = addDays(today, daysAhead);
+  const rangeStart = lookbackDays > 0 ? addDays(today, -lookbackDays) : today;
   const events: Array<{ date: Date; billId: string; name: string; amount: number; is_autopay: boolean; paid_by: string }> = [];
 
   for (const bill of bills) {
     if (bill.schedule_type === "every_payday") {
       for (const pd of paydays) {
-        if (!isBefore(pd, today) && isBefore(pd, end)) {
+        if (!isBefore(pd, rangeStart) && isBefore(pd, end)) {
           events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
         }
       }
     } else if (bill.schedule_type === "every_other_payday") {
-      const relevant = paydays.filter((d, i) => i % 2 === 0 && !isBefore(d, today) && isBefore(d, end));
+      const relevant = paydays.filter((d, i) => i % 2 === 0 && !isBefore(d, rangeStart) && isBefore(d, end));
       for (const pd of relevant) {
         events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
       }
     } else {
-      // Fixed schedule — walk forward from next_due_date
+      // Fixed schedule — walk from next_due_date, including past unpaid
       let due = getNextDueDate(bill, paydays, timezone);
       if (!due) continue;
+      // Walk backwards to find events in the lookback window
+      if (lookbackDays > 0) {
+        let pastDue = due;
+        const pastDates: Date[] = [];
+        let backIter = 0;
+        while (backIter < 52) {
+          const prev = reverseBillDate(pastDue, bill.schedule_type, bill.custom_interval_days);
+          if (isBefore(prev, rangeStart)) break;
+          pastDates.unshift(prev);
+          pastDue = prev;
+          backIter++;
+        }
+        for (const pd of pastDates) {
+          events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
+        }
+      }
       let iterations = 0;
       while (isBefore(due, end) && iterations < 52) {
-        if (!isBefore(due, today)) {
-          events.push({ date: due, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
-        }
+        events.push({ date: due, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
         due = advanceBillDate(due, bill.schedule_type, bill.custom_interval_days);
         iterations++;
       }

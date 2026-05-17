@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import type { Bill, Profile, HouseholdMember, Debt } from "@/lib/types";
-import { getUpcomingPaydays, getNextDueDate, daysUntil, formatDueDate, getBillEvents, advanceBillDate } from "@/lib/payday";
+import { getUpcomingPaydays, getNextDueDate, daysUntil, formatDueDate, getBillEvents, advanceBillDate, reverseBillDate } from "@/lib/payday";
 import type { ScheduleType } from "@/lib/payday";
 import Modal from "@/components/Modal";
 import { Plus, Trash2, Pencil, ToggleLeft, ToggleRight, Calendar, List, ArrowRightLeft, Check, ChevronLeft, ChevronRight } from "lucide-react";
@@ -249,17 +249,24 @@ export default function BillsPage() {
     }
   }
 
-  // Calendar events — compute per bill, covering at least through the viewed calendar month
+  // Calendar events — compute per bill, covering the viewed calendar month + buffer
+  // lookbackDays ensures past unpaid bills show as overdue
   const calDaysAhead = Math.max(
     365,
     Math.ceil((endOfMonth(calMonth).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) + 31
+  );
+  const calLookback = Math.max(
+    90,
+    Math.ceil((new Date().getTime() - startOfMonth(calMonth).getTime()) / (1000 * 60 * 60 * 24)) + 31
   );
   const calEvents: BillEvent[] = activeBills.flatMap((bill) => {
     const pd = getPaydaysForBill(bill);
     return getBillEvents(
       [{ ...bill, paid_by: bill.paid_by || "shared" }],
       pd,
-      calDaysAhead
+      calDaysAhead,
+      undefined,
+      calLookback
     );
   }).sort((a, b) => a.date.getTime() - b.date.getTime());
 
