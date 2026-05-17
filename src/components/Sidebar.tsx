@@ -14,6 +14,8 @@ import {
   BarChart3,
   Copy,
   Check,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -28,12 +30,10 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-// Generate a deterministic color from a string
 function stringToColor(str: string): string {
   const colors = [
-    "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-rose-500",
+    "bg-indigo-500", "bg-emerald-500", "bg-violet-500", "bg-rose-500",
     "bg-amber-500", "bg-cyan-500", "bg-pink-500", "bg-teal-500",
-    "bg-indigo-500", "bg-orange-500",
   ];
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -42,7 +42,6 @@ function stringToColor(str: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-// Format invite code for readability: "a3f7b2c1" -> "A3F7-B2C1"
 function formatInviteCode(code: string): string {
   const upper = code.toUpperCase();
   if (upper.length <= 4) return upper;
@@ -67,6 +66,18 @@ export default function Sidebar() {
   const [householdName, setHouseholdName] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    setDarkMode(document.documentElement.classList.contains("dark"));
+  }, []);
+
+  function toggleDarkMode() {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  }
 
   useEffect(() => {
     async function loadUser() {
@@ -116,10 +127,10 @@ export default function Sidebar() {
 
   const navContent = (
     <>
-      <div className="p-6">
-        <h1 className="text-xl font-bold text-white">💰 FinTracker</h1>
+      <div className="px-5 py-6">
+        <h1 className="text-lg font-semibold text-white tracking-tight">FinTracker</h1>
       </div>
-      <nav className="flex-1 px-3">
+      <nav className="flex-1 px-3 space-y-0.5">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -129,55 +140,53 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
                 isActive
-                  ? "bg-primary text-white"
-                  : "text-slate-300 hover:bg-sidebar-hover hover:text-white"
+                  ? "bg-white/10 text-white"
+                  : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
               }`}
             >
-              <item.icon size={20} />
+              <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
               <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* User profile + household code + sign out */}
-      <div className="p-3 border-t border-white/10">
-        <div className="flex items-center gap-3 px-4 py-2">
-          <div className={`w-9 h-9 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+      <div className="p-3 border-t border-white/[0.06]">
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <div className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-semibold shrink-0`}>
             {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{displayName}</p>
-            {userName && <p className="text-xs text-slate-400 truncate">{userEmail}</p>}
+            <p className="text-[13px] font-medium text-white truncate">{displayName}</p>
+            {userName && <p className="text-[11px] text-gray-500 truncate">{userEmail}</p>}
           </div>
         </div>
 
-        {/* Household invite code */}
         {inviteCode && (
           <button
             onClick={copyInviteCode}
-            className="flex items-center gap-2 px-4 py-1.5 w-full text-left group"
+            className="flex items-center gap-2 px-3 py-1.5 w-full text-left group rounded-md hover:bg-white/5 transition-colors"
             title="Click to copy invite code"
           >
-            <span className="text-[11px] text-slate-500 truncate">
-              {householdName || "Household"}: <span className="font-mono text-slate-300 tracking-wider">{formatInviteCode(inviteCode)}</span>
+            <span className="text-[11px] text-gray-500 truncate">
+              {householdName || "Household"}: <span className="font-mono text-gray-400 tracking-wider">{formatInviteCode(inviteCode)}</span>
             </span>
             {codeCopied ? (
-              <Check size={12} className="text-success shrink-0" />
+              <Check size={11} className="text-emerald-400 shrink-0" />
             ) : (
-              <Copy size={12} className="text-slate-500 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
+              <Copy size={11} className="text-gray-600 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
             )}
           </button>
         )}
 
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-sidebar-hover hover:text-white w-full transition-colors"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-white/5 hover:text-gray-200 w-full transition-all duration-150 mt-1"
         >
-          <LogOut size={18} />
-          <span className="text-sm">Sign Out</span>
+          <LogOut size={16} strokeWidth={1.5} />
+          <span className="text-[13px]">Sign Out</span>
         </button>
       </div>
     </>
@@ -185,39 +194,35 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 p-2 bg-sidebar text-white rounded-lg md:hidden"
+        className="fixed top-4 left-4 z-50 p-2 bg-sidebar text-white rounded-lg shadow-lg md:hidden"
       >
-        <Menu size={24} />
+        <Menu size={22} />
       </button>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Mobile sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transition-transform md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-60 bg-sidebar flex flex-col transition-transform duration-200 md:hidden ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 text-slate-300 hover:text-white"
+          className="absolute top-5 right-4 text-gray-400 hover:text-white"
         >
-          <X size={24} />
+          <X size={20} />
         </button>
         {navContent}
       </aside>
 
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-64 md:h-screen md:sticky md:top-0 bg-sidebar overflow-y-auto">
+      <aside className="hidden md:flex md:flex-col md:w-60 md:h-screen md:sticky md:top-0 bg-sidebar overflow-y-auto">
         {navContent}
       </aside>
     </>

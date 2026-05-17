@@ -81,65 +81,65 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#f5f5f7] p-4">
+      <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold">💰 FinTracker</h1>
-          <p className="text-muted mt-2">Create your account</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">FinTracker</h1>
+          <p className="text-sm text-gray-400 mt-1">Create your account</p>
         </div>
         <form
           onSubmit={handleSubmit}
-          className="bg-card rounded-xl shadow-sm border border-border p-6 space-y-4"
+          className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-gray-200/40 p-6 space-y-4"
         >
           {error && (
-            <div className="bg-red-50 text-danger text-sm p-3 rounded-lg">
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl">
               {error}
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Name</label>
             <input
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name"
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">
               Household Invite Code{" "}
-              <span className="text-muted font-normal">(optional)</span>
+              <span className="text-gray-300 font-normal">(optional)</span>
             </label>
             <input
               type="text"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
               placeholder="Enter code to join a household"
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
             />
-            <p className="text-xs text-muted mt-1">
+            <p className="text-xs text-gray-400 mt-1.5">
               Have an invite code from your partner? Enter it to share finances.
               Leave blank to create a new household.
             </p>
@@ -147,13 +147,13 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 font-medium"
+            className="w-full py-2.5 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm transition-colors shadow-sm"
           >
             {loading ? "Creating account..." : "Create Account"}
           </button>
-          <p className="text-center text-sm text-muted">
+          <p className="text-center text-xs text-gray-400">
             Already have an account?{" "}
-            <Link href="/login" className="text-primary hover:underline">
+            <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">
               Sign in
             </Link>
           </p>

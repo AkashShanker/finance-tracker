@@ -277,33 +277,33 @@ export default function DashboardPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">
-          Welcome{profile?.display_name ? `, ${profile.display_name}` : ""}
+        <h1 className="text-xl font-semibold tracking-tight">
+          Welcome back{profile?.display_name ? `, ${profile.display_name}` : ""}
         </h1>
-        <p className="text-muted">Here&apos;s your financial overview</p>
+        <p className="text-sm text-muted mt-0.5">Here&apos;s your financial overview</p>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard title="Monthly Income" amount={monthlyIncome} icon={<TrendingUp className="text-success" size={24} />} color="text-success" />
-        <SummaryCard title="Monthly Expenses" amount={monthlyExpenses} icon={<TrendingDown className="text-danger" size={24} />} color="text-danger" />
-        <SummaryCard title="Monthly Bills" amount={totalBills} icon={<Receipt className="text-warning" size={24} />} color="text-warning" />
-        <SummaryCard title="Total Debt" amount={totalDebt} icon={<CreditCard className="text-primary" size={24} />} color="text-primary" />
+        <SummaryCard title="Monthly Income" amount={monthlyIncome} icon={<TrendingUp className="text-emerald-400" size={20} />} color="text-emerald-500" bg="bg-emerald-50/80" />
+        <SummaryCard title="Monthly Expenses" amount={monthlyExpenses} icon={<TrendingDown className="text-rose-400" size={20} />} color="text-rose-400" bg="bg-rose-50/80" />
+        <SummaryCard title="Monthly Bills" amount={totalBills} icon={<Receipt className="text-amber-400" size={20} />} color="text-amber-500" bg="bg-amber-50/80" />
+        <SummaryCard title="Total Debt" amount={totalDebt} icon={<CreditCard className="text-violet-400" size={20} />} color="text-violet-500" bg="bg-violet-50/80" />
       </div>
 
       {/* Net Income Banner */}
-      <div className={`p-4 rounded-xl border ${netIncome >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+      <div className={`px-4 py-3 rounded-2xl border ${netIncome >= 0 ? "bg-emerald-50/50 border-emerald-100" : "bg-rose-50/50 border-rose-100"}`}>
         <div className="flex items-center gap-2">
-          {netIncome < 0 && <AlertTriangle className="text-danger" size={20} />}
-          <span className="font-medium">
-            Net this month: <span className={netIncome >= 0 ? "text-success" : "text-danger"}>{formatCurrency(netIncome)}</span>
+          {netIncome < 0 && <AlertTriangle className="text-rose-400" size={18} />}
+          <span className="text-sm font-medium text-gray-500">
+            Net this month: <span className={`font-semibold ${netIncome >= 0 ? "text-emerald-500" : "text-rose-400"}`}>{formatCurrency(netIncome)}</span>
           </span>
         </div>
       </div>
 
       {/* Upcoming Bills — interactive with pay/undo */}
-      <div className="bg-card rounded-xl border border-border p-5">
-        <h2 className="text-lg font-semibold mb-4">Upcoming Bills</h2>
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Upcoming Bills</h2>
         {upcomingEvents.length === 0 ? (
           <p className="text-muted text-sm">No bills due in the next 10 days</p>
         ) : (
@@ -372,8 +372,8 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-card rounded-xl border border-border p-5">
-        <h2 className="text-lg font-semibold mb-4">Recent Transactions</h2>
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Recent Transactions</h2>
         {recentTransactions.length === 0 ? (
           <p className="text-muted text-sm">No transactions yet</p>
         ) : (
@@ -386,7 +386,7 @@ export default function DashboardPage() {
                   </p>
                   <p className="text-sm text-muted">{tx.date}</p>
                 </div>
-                <span className={`font-semibold ${tx.type === "income" ? "text-success" : "text-danger"}`}>
+                <span className={`font-semibold ${tx.type === "income" ? "text-emerald-500" : "text-rose-400"}`}>
                   {tx.type === "income" ? "+" : "-"}{formatCurrency(tx.amount)}
                 </span>
               </div>
@@ -397,14 +397,14 @@ export default function DashboardPage() {
 
       {/* Debt Overview — collapsible */}
       {debts.length > 0 && (
-        <div className="bg-card rounded-xl border border-border">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
           <button
             onClick={() => setDebtExpanded(!debtExpanded)}
             className="w-full flex items-center justify-between p-5 text-left"
           >
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold">Debt Overview</h2>
-              <span className="text-sm text-muted">{formatCurrency(totalDebt)} total</span>
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Debt Overview</h2>
+              <span className="text-xs text-muted font-medium">{formatCurrency(totalDebt)} total</span>
             </div>
             {debtExpanded ? <ChevronUp size={20} className="text-muted" /> : <ChevronDown size={20} className="text-muted" />}
           </button>
@@ -547,14 +547,14 @@ export default function DashboardPage() {
   );
 }
 
-function SummaryCard({ title, amount, icon, color }: { title: string; amount: number; icon: React.ReactNode; color: string }) {
+function SummaryCard({ title, amount, icon, color, bg }: { title: string; amount: number; icon: React.ReactNode; color: string; bg: string }) {
   return (
-    <div className="bg-card rounded-xl border border-border p-5">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-muted">{title}</span>
-        {icon}
+    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">{title}</span>
+        <div className={`p-2 rounded-xl ${bg}`}>{icon}</div>
       </div>
-      <p className={`text-2xl font-bold ${color}`}>{formatCurrency(amount)}</p>
+      <p className={`text-2xl font-semibold tracking-tight ${color}`}>{formatCurrency(amount)}</p>
     </div>
   );
 }

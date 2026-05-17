@@ -17,7 +17,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - `src/app/(app)/` — all app pages (with sidebar)
 - `src/lib/supabase/` — client.ts (browser), server.ts (SSR), middleware.ts (auth session refresh + redirect)
 - `src/lib/types.ts` — all TypeScript interfaces
-- `src/lib/payday.ts` — payday schedule calculator (getUpcomingPaydays, getNextDueDate, getBillEvents, daysUntil)
+- `src/lib/payday.ts` — payday schedule calculator (getUpcomingPaydays, getNextDueDate, getBillEvents, reverseBillDate, advanceBillDate, daysUntil)
 - `src/lib/format.ts` — formatCurrency, formatDate, getOrdinalDay, daysUntilDue
 - `src/lib/timezone.ts` — timezone-aware date utilities (getTodayString, getToday, parseLocalDate, TIMEZONE_OPTIONS)
 - `src/lib/accounts.ts` — (deprecated, now uses tracked_accounts table)
@@ -29,7 +29,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - `profiles` — user profiles linked to auth.users (email, display_name, household_id, pay_frequency, next_pay_date, timezone)
 - `household_members` — flexible members (name, email, pay_frequency, next_pay_date, profile_id) — don't require signup
 - `categories` — income/expense categories per household (seeded with 14 defaults)
-- `transactions` — income and expense entries
+- `transactions` — income and expense entries, optional payment_method_id (FK to tracked_accounts)
 - `bills` — recurring bills with schedule_type, paid_by (member UUID), optional debt_id link
 - `debts` — debt tracking with current_balance, original_balance, interest_rate, minimum_payment
 - `snapshots` + `snapshot_balances` — history ledger for payday balance tracking
@@ -55,6 +55,8 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 | 15 | import-history.sql | 4 historical snapshots from Excel | DONE |
 | 16 | supabase-bill-frequency.sql | Expand schedule_type + custom_interval_days | NEEDS RUN |
 | 17 | supabase-readable-invite-code.sql | Human-readable invite codes | NEEDS RUN |
+| 18 | supabase-transaction-payment-method.sql | payment_method_id on transactions (FK to tracked_accounts) | NEEDS RUN |
+| 19 | supabase-bills-category.sql | Add "Bills" expense category to all households | NEEDS RUN |
 
 ## RPC Functions (security definer, bypass RLS)
 - `seed_default_categories(h_id)` — seeds 14 default categories for new household
@@ -74,12 +76,16 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - **Timezone-aware dates**: All date calculations use configurable timezone (default: America/New_York). `src/lib/timezone.ts` provides helpers. Avoids UTC midnight bugs.
 - **Bills as pay hub**: Bills page has 3 view tabs (List, Calendar, Upcoming). Calendar shows all bills/paydays across all members with paid/overdue color coding. Click to expand day, mark bills as paid with custom amounts, undo payments. Auto-advances next_due_date, creates expense transaction, updates linked debt balance.
 - **User identity**: Sidebar shows deterministic colored avatar (from email hash), display name, email, and household invite code (click to copy) for quick user identification.
+- **Payment method on transactions**: Expenses can optionally track which card/account was used via payment_method_id → tracked_accounts. The query gracefully falls back if the DB column doesn't exist yet.
+- **Bill payment auto-categorization**: When a bill is marked as paid, the expense transaction is auto-assigned a "Bills" (🧾) category. The category is created on first use if it doesn't exist.
+- **Overdue bills in calendar**: getBillEvents accepts a lookbackDays param to generate past-date events. Unpaid past bills show in red with "!" prefix until marked paid. reverseBillDate walks backwards from next_due_date.
+- **UI theme**: Clean & minimal Apple Card-inspired pastel design. Frosted glass cards (`bg-white/80 backdrop-blur-sm`), soft shadows, rose-400 for expenses, emerald-500 for income, violet-500 for debt, amber-500 for bills. Background is Apple's `#f5f5f7`. Geist font.
 
 ## Page Breakdown
 | Route | Page | Key Features |
 |-------|------|-------------|
 | `/` | Dashboard | Summary cards, net income banner, upcoming bills, recent transactions, debt overview |
-| `/transactions` | Transactions | Add/delete/filter income & expense with categories |
+| `/transactions` | Transactions | Add/edit/delete expenses & income. Filter by type (all/income/expense) + date range (this week/month/year/custom). Expense Summary panel groups by category with totals. Payment method (card) field from tracked_accounts. |
 | `/bills` | Bills | 3 view tabs (List, Calendar, Upcoming). List grouped by member with reassign. Calendar with paid/overdue indicators + mark-as-paid + undo. Upcoming shows next 30 days. Add/edit with 8 schedule types + debt linking |
 | ~~`/calendar`~~ | ~~Calendar~~ | **Merged into Bills page** — see Bills "Calendar" and "Upcoming" view tabs |
 | `/debts` | Debts | Debt cards with progress bars, add/edit/soft-delete |
@@ -95,7 +101,9 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase publishable anon key
 
 ## What's Left / Next Steps
-- Run pending SQL migrations 7-13 in Supabase SQL Editor (see table above)
+- Run pending SQL migrations 7-13, 16-19 in Supabase SQL Editor (see table above)
 - Link existing debt-related bills to their debts via Bills -> Edit -> Linked Debt dropdown
 - Connect tracked_accounts to debts table so adding a debt reflects in both places
+- Apply pastel UI polish to remaining pages: debts, history, charts, settings (dashboard, transactions, bills, auth pages are done)
+- Fix pre-existing Turbopack parse error in bills/page.tsx (line 585, works fine in production build)
 - Future: budget planning page, recurring transaction automation, payday checklist page, password reset flow, more charts
