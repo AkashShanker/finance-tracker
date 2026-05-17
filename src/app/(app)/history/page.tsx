@@ -177,9 +177,12 @@ export default function HistoryPage() {
 
             return (
               <div key={snap.id} className="bg-card rounded-xl border border-border overflow-hidden">
-                <button
+                <div
                   onClick={() => setExpandedId(isExpanded ? null : snap.id)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpandedId(isExpanded ? null : snap.id); }}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left cursor-pointer"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
@@ -206,7 +209,7 @@ export default function HistoryPage() {
                     </button>
                     {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                   </div>
-                </button>
+                </div>
 
                 {isExpanded && (
                   <div className="border-t border-border p-4">

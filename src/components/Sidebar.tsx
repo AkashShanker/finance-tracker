@@ -6,15 +6,12 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   Receipt,
-  CreditCard,
-  MessageSquare,
   Settings,
   LogOut,
   Menu,
   X,
   History,
   BarChart3,
-  CalendarDays,
   Copy,
   Check,
 } from "lucide-react";
@@ -26,11 +23,8 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/bills", label: "Bills", icon: Receipt },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/debts", label: "Debts", icon: CreditCard },
   { href: "/history", label: "History", icon: History },
   { href: "/charts", label: "Charts", icon: BarChart3 },
-  { href: "/ask-claude", label: "Ask Claude", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

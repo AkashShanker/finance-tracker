@@ -235,13 +235,13 @@ All tables have RLS enabled. Policies scope access to the user's household:
 | 4 | supabase-bills-upgrade.sql | DONE |
 | 5 | supabase-bills-flexible-owner.sql | DONE |
 | 6 | supabase-members-accounts.sql | DONE |
-| 7 | supabase-member-email.sql | NEEDS TO BE RUN |
-| 8 | supabase-member-pay.sql | NEEDS TO BE RUN |
-| 9 | supabase-bill-debt-link.sql | NEEDS TO BE RUN |
-| 10 | supabase-join-household.sql | NEEDS TO BE RUN |
-| 11 | supabase-account-deletion.sql | NEEDS TO BE RUN |
-| 12 | supabase-transfer-ownership.sql | NEEDS TO BE RUN |
-| 13 | supabase-timezone.sql | NEEDS TO BE RUN |
+| 7 | supabase-member-email.sql | DONE |
+| 8 | supabase-member-pay.sql | DONE |
+| 9 | supabase-bill-debt-link.sql | DONE |
+| 10 | supabase-join-household.sql | DONE |
+| 11 | supabase-account-deletion.sql | DONE |
+| 12 | supabase-transfer-ownership.sql | DONE |
+| 13 | supabase-timezone.sql | DONE |
 | 14 | import-data.sql | DONE |
 | 15 | import-history.sql | DONE |
-| 16 | supabase-bill-frequency.sql | NEEDS TO BE RUN |
+| 16 | supabase-bill-frequency.sql | DONE |

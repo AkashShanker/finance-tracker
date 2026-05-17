@@ -72,21 +72,20 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 - **Bill scheduling**: 8 schedule types (monthly, biweekly, weekly, quarterly, yearly, every_payday, every_other_payday, custom). Custom uses custom_interval_days (every N days). paid_by stores a household_member UUID.
 - **Bill-debt linking**: Bills can link to a debt via debt_id. Calendar's mark-as-paid flow updates debt.current_balance with user-approved amount (to account for interest/late charges).
 - **Timezone-aware dates**: All date calculations use configurable timezone (default: America/New_York). `src/lib/timezone.ts` provides helpers. Avoids UTC midnight bugs.
-- **Calendar as pay hub**: Consolidated calendar shows all bills/paydays across all members. Click to expand day, mark bills as paid with custom amounts, auto-advances next_due_date, creates expense transaction, updates linked debt balance.
-- **User identity**: Sidebar shows deterministic colored avatar (from email hash), display name, and email for quick user identification.
-- **Claude integration**: Builds financial context string from all data + member pay schedules, opens claude.ai with pre-filled query (free, no API key).
+- **Bills as pay hub**: Bills page has 3 view tabs (List, Calendar, Upcoming). Calendar shows all bills/paydays across all members with paid/overdue color coding. Click to expand day, mark bills as paid with custom amounts, undo payments. Auto-advances next_due_date, creates expense transaction, updates linked debt balance.
+- **User identity**: Sidebar shows deterministic colored avatar (from email hash), display name, email, and household invite code (click to copy) for quick user identification.
 
 ## Page Breakdown
 | Route | Page | Key Features |
 |-------|------|-------------|
 | `/` | Dashboard | Summary cards, net income banner, upcoming bills, recent transactions, debt overview |
 | `/transactions` | Transactions | Add/delete/filter income & expense with categories |
-| `/bills` | Bills | List grouped by member with reassign, calendar view, add/edit with schedule types + debt linking |
-| `/calendar` | Calendar | Consolidated calendar + upcoming list, click day to expand, mark-as-paid modal with custom amount + debt balance update |
+| `/bills` | Bills | 3 view tabs (List, Calendar, Upcoming). List grouped by member with reassign. Calendar with paid/overdue indicators + mark-as-paid + undo. Upcoming shows next 30 days. Add/edit with 8 schedule types + debt linking |
+| ~~`/calendar`~~ | ~~Calendar~~ | **Merged into Bills page** — see Bills "Calendar" and "Upcoming" view tabs |
 | `/debts` | Debts | Debt cards with progress bars, add/edit/soft-delete |
 | `/history` | History | Payday snapshot timeline, pre-fills from tracked_accounts + latest snapshot, expandable with asset/debt totals |
 | `/charts` | Charts | 5 recharts: net worth, assets vs debt, CC debt, individual debts, asset breakdown |
-| `/ask-claude` | Ask Claude | Financial context builder, prompt templates, opens claude.ai |
+| ~~`/ask-claude`~~ | ~~Ask Claude~~ | **Removed** |
 | `/settings` | Settings | Profile (name, pay freq, pay date, timezone), join household, household members (name/email/pay schedule), tracked accounts, invite code + ownership transfer, danger zone (delete account/household) |
 | `/login` | Login | Email/password auth |
 | `/signup` | Signup | Registration with optional invite code, auto-links member by email |
