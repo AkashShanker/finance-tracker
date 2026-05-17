@@ -31,12 +31,14 @@ export interface Transaction {
   household_id: string;
   user_id: string;
   category_id: string | null;
+  payment_method_id: string | null;
   amount: number;
   type: "income" | "expense";
   description: string | null;
   date: string;
   created_at: string;
   category?: Category;
+  payment_method?: TrackedAccount;
 }
 
 export interface Bill {
