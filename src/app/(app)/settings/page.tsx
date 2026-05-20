@@ -95,7 +95,6 @@ export default function SettingsPage() {
       timezone: form.timezone,
     }).eq("id", profile.id);
 
-    // Also sync pay schedule to the user's household_member record
     const myMember = members.find((m) => m.profile_id === profile.id);
     if (myMember) {
       await supabase.from("household_members").update({
@@ -110,7 +109,6 @@ export default function SettingsPage() {
     setTimeout(() => setMessage(""), 3000);
   }
 
-  // ---- MEMBERS ----
   async function addMember() {
     if (!newMemberName.trim() || !profile?.household_id) return;
     const supabase = createClient();
@@ -143,7 +141,6 @@ export default function SettingsPage() {
     load();
   }
 
-  // ---- TRACKED ACCOUNTS ----
   async function addAccount() {
     if (!newAccount.name.trim() || !profile?.household_id) return;
     const supabase = createClient();
@@ -309,7 +306,7 @@ export default function SettingsPage() {
             <p className="text-xs text-muted mt-1">Used for date calculations across the app</p>
           </div>
           {message && (
-            <div className={`text-sm p-2 rounded-lg ${message.includes("Failed") ? "bg-red-50 text-danger" : "bg-green-50 text-success"}`}>{message}</div>
+            <div className={`text-sm p-2 rounded-lg ${message.includes("Failed") ? "bg-rose-50 dark:bg-rose-500/10 text-danger" : "bg-emerald-50 dark:bg-emerald-500/10 text-success"}`}>{message}</div>
           )}
           <button type="submit" disabled={saving} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 font-medium">
             {saving ? "Saving..." : "Save Changes"}
@@ -341,7 +338,7 @@ export default function SettingsPage() {
           </button>
         </div>
         {joinMessage && (
-          <div className={`text-sm p-2 rounded-lg mt-2 ${joinMessage.includes("success") ? "bg-green-50 text-success" : "bg-red-50 text-danger"}`}>
+          <div className={`text-sm p-2 rounded-lg mt-2 ${joinMessage.includes("success") ? "bg-emerald-50 dark:bg-emerald-500/10 text-success" : "bg-rose-50 dark:bg-rose-500/10 text-danger"}`}>
             {joinMessage}
           </div>
         )}
@@ -354,7 +351,7 @@ export default function SettingsPage() {
 
         <div className="space-y-2 mb-4">
           {activeMembers.map((m) => (
-            <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+            <div key={m.id} className="flex items-center justify-between bg-accent rounded-lg p-3">
               {editingMemberId === m.id ? (
                 <div className="flex-1 space-y-3">
                   <div className="flex items-center justify-between">
@@ -410,7 +407,7 @@ export default function SettingsPage() {
                     <button onClick={() => updateMember(m.id)} className="px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium">
                       Save Member
                     </button>
-                    <button onClick={() => setEditingMemberId(null)} className="px-4 py-1.5 border border-border rounded-lg text-sm hover:bg-gray-50">
+                    <button onClick={() => setEditingMemberId(null)} className="px-4 py-1.5 border border-border rounded-lg text-sm hover:bg-accent">
                       Cancel
                     </button>
                   </div>
@@ -489,22 +486,22 @@ export default function SettingsPage() {
         </div>
 
         {showAddAccount && (
-          <div className="bg-blue-50 rounded-lg p-3 mb-4 space-y-3">
+          <div className="bg-primary-light rounded-lg p-3 mb-4 space-y-3">
             <div>
               <label className="block text-sm font-medium mb-1">Account Name</label>
-              <input type="text" value={newAccount.name} onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })} placeholder="e.g. Wife's 401K" className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white" />
+              <input type="text" value={newAccount.name} onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })} placeholder="e.g. Wife's 401K" className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Type</label>
-                <select value={newAccount.account_type} onChange={(e) => setNewAccount({ ...newAccount, account_type: e.target.value as "asset" | "debt" })} className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white">
+                <select value={newAccount.account_type} onChange={(e) => setNewAccount({ ...newAccount, account_type: e.target.value as "asset" | "debt" })} className="w-full px-3 py-2 border border-border rounded-lg text-sm">
                   <option value="asset">Asset</option>
                   <option value="debt">Debt</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Owner</label>
-                <select value={newAccount.owner_member_id} onChange={(e) => setNewAccount({ ...newAccount, owner_member_id: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white">
+                <select value={newAccount.owner_member_id} onChange={(e) => setNewAccount({ ...newAccount, owner_member_id: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-sm">
                   <option value="">Shared</option>
                   {activeMembers.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
@@ -519,7 +516,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Asset accounts */}
         <h3 className="text-sm font-medium text-success mb-2">Assets</h3>
         <div className="space-y-1 mb-4">
           {assetAccounts.length === 0 ? (
@@ -531,7 +527,6 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Debt accounts */}
         <h3 className="text-sm font-medium text-danger mb-2">Debts</h3>
         <div className="space-y-1">
           {debtAccounts.length === 0 ? (
@@ -549,8 +544,8 @@ export default function SettingsPage() {
         <div className="bg-card rounded-xl border border-border p-5">
           <h2 className="text-lg font-semibold mb-3">Invite Code</h2>
           <div className="flex items-center gap-2 mb-2">
-            <code className="bg-gray-100 px-3 py-2 rounded-lg font-mono text-lg tracking-widest">{household.invite_code}</code>
-            <button onClick={copyInviteCode} className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-gray-50">
+            <code className="bg-accent px-3 py-2 rounded-lg font-mono text-lg tracking-widest">{household.invite_code}</code>
+            <button onClick={copyInviteCode} className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-accent">
               <Copy size={14} /> {copied ? "Copied!" : "Copy"}
             </button>
           </div>
@@ -600,7 +595,7 @@ export default function SettingsPage() {
       )}
 
       {/* Danger Zone */}
-      <div className="bg-card rounded-xl border border-red-200 p-5">
+      <div className="bg-card rounded-xl border border-danger/30 p-5">
         <h2 className="text-lg font-semibold mb-2 flex items-center gap-2 text-danger">
           <AlertTriangle size={20} /> Danger Zone
         </h2>
@@ -619,7 +614,7 @@ export default function SettingsPage() {
                 value={deleteConfirm}
                 onChange={(e) => setDeleteConfirm(e.target.value)}
                 placeholder="delete everything"
-                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="w-full px-3 py-2 border border-danger/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-danger/30"
               />
             </div>
             <button
@@ -644,7 +639,7 @@ export default function SettingsPage() {
                 value={deleteConfirm}
                 onChange={(e) => setDeleteConfirm(e.target.value)}
                 placeholder="delete my account"
-                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="w-full px-3 py-2 border border-danger/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-danger/30"
               />
             </div>
             <button
@@ -670,16 +665,16 @@ function AccountRow({
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className={`flex items-center justify-between px-3 py-2 rounded-lg ${account.is_active ? "bg-gray-50" : "bg-gray-50 opacity-50"}`}>
+    <div className={`flex items-center justify-between px-3 py-2 rounded-lg bg-accent ${!account.is_active ? "opacity-50" : ""}`}>
       <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${account.is_active ? (account.account_type === "asset" ? "bg-success" : "bg-danger") : "bg-gray-300"}`} />
+        <span className={`w-2 h-2 rounded-full ${account.is_active ? (account.account_type === "asset" ? "bg-success" : "bg-danger") : "bg-muted"}`} />
         <span className="text-sm font-medium">{account.name}</span>
         <span className="text-xs text-muted">({getMemberName(account.owner_member_id)})</span>
       </div>
       <div className="flex items-center gap-1">
         <button
           onClick={() => onToggle(account.id, account.is_active)}
-          className={`text-xs px-2 py-0.5 rounded ${account.is_active ? "bg-green-100 text-green-700" : "bg-gray-200 text-muted"}`}
+          className={`text-xs px-2 py-0.5 rounded ${account.is_active ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" : "bg-accent text-muted"}`}
         >
           {account.is_active ? "Active" : "Dormant"}
         </button>

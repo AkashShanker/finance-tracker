@@ -265,7 +265,7 @@ export default function TransactionsPage() {
             className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium capitalize transition-all ${
               filterType === t
                 ? "bg-primary text-white shadow-sm"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                : "text-muted hover:text-foreground hover:bg-accent"
             }`}
           >
             {t}
@@ -274,7 +274,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Date Range Filter */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-4 space-y-3">
+      <div className="bg-card-alpha backdrop-blur-sm rounded-2xl border border-border shadow-[var(--shadow)] p-4 space-y-3">
         <div className="flex flex-wrap gap-1.5">
           {([
             ["all", "All Time"],
@@ -288,8 +288,8 @@ export default function TransactionsPage() {
               onClick={() => setDatePreset(key as DatePreset)}
               className={`px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all ${
                 datePreset === key
-                  ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  ? "bg-primary-light text-primary ring-1 ring-ring"
+                  : "text-muted hover:text-foreground hover:bg-accent"
               }`}
             >
               {label}
@@ -302,14 +302,14 @@ export default function TransactionsPage() {
               type="date"
               value={customStart}
               onChange={(e) => setCustomStart(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+              className="px-3 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
             />
-            <span className="text-gray-400 text-xs">to</span>
+            <span className="text-muted text-xs">to</span>
             <input
               type="date"
               value={customEnd}
               onChange={(e) => setCustomEnd(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+              className="px-3 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
             />
           </div>
         )}
@@ -317,27 +317,27 @@ export default function TransactionsPage() {
 
       {/* Category Expense Summary (collapsible) */}
       {filtered.some((t) => t.type === "expense") && (
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+        <div className="bg-card-alpha backdrop-blur-sm rounded-2xl border border-border shadow-[var(--shadow)] overflow-hidden">
           <button
             onClick={() => setShowSummary(!showSummary)}
-            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-hover-bg transition-colors"
           >
             <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold text-gray-900">Expense Summary</span>
-              <span className="text-xs text-gray-400 font-medium">
+              <span className="text-sm font-semibold">Expense Summary</span>
+              <span className="text-xs text-muted font-medium">
                 {formatCurrency(totalExpenses)} across {categorySummary.length} {categorySummary.length === 1 ? "category" : "categories"}
               </span>
             </div>
-            {showSummary ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+            {showSummary ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />}
           </button>
           {showSummary && (
-            <div className="border-t border-gray-100">
+            <div className="border-t border-border">
               {categorySummary.map((cat) => (
-                <div key={cat.category_id || "__none__"} className="flex items-center justify-between px-5 py-3 border-b border-gray-50 last:border-0">
+                <div key={cat.category_id || "__none__"} className="flex items-center justify-between px-5 py-3 border-b border-border/50 last:border-0">
                   <div className="flex items-center gap-2.5">
                     <span className="text-base">{cat.icon}</span>
-                    <span className="text-sm font-medium text-gray-700">{cat.name}</span>
-                    <span className="text-xs text-gray-400">({cat.count})</span>
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <span className="text-xs text-muted">({cat.count})</span>
                   </div>
                   <span className="text-sm font-semibold text-rose-400">{formatCurrency(cat.total)}</span>
                 </div>
@@ -348,24 +348,24 @@ export default function TransactionsPage() {
       )}
 
       {/* Transaction List */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="bg-card-alpha backdrop-blur-sm rounded-2xl border border-border shadow-[var(--shadow)] overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-10 text-center text-gray-400 text-sm">
+          <div className="p-10 text-center text-muted text-sm">
             No transactions found for this period.
           </div>
         ) : (
           <>
-            <div className="px-5 py-2.5 text-xs text-gray-400 font-medium bg-gray-50/80 border-b border-gray-100">
+            <div className="px-5 py-2.5 text-xs text-muted font-medium bg-accent/80 border-b border-border">
               {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
             </div>
             {filtered.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50/50 border-b border-gray-50 last:border-0 transition-colors group">
+              <div key={tx.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-hover-bg border-b border-border/50 last:border-0 transition-colors group">
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEdit(tx)}>
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium truncate">
                     {tx.category?.icon}{" "}
                     {tx.description || tx.category?.name || "Transaction"}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                  <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
                     <span>{formatDate(tx.date)}</span>
                     {tx.payment_method && (
                       <>
@@ -381,7 +381,7 @@ export default function TransactionsPage() {
                 <div className="flex items-center gap-3">
                   <span
                     className={`text-sm font-semibold tabular-nums ${
-                      tx.type === "income" ? "text-emerald-500" : "text-rose-400"
+                      tx.type === "income" ? "text-emerald-500 dark:text-emerald-400" : "text-rose-400"
                     }`}
                   >
                     {tx.type === "income" ? "+" : "-"}
@@ -389,13 +389,13 @@ export default function TransactionsPage() {
                   </span>
                   <button
                     onClick={() => openEdit(tx)}
-                    className="p-1 text-gray-300 hover:text-indigo-500 rounded transition-colors"
+                    className="p-1 text-muted hover:text-primary rounded transition-colors"
                   >
                     <Pencil size={14} />
                   </button>
                   <button
                     onClick={() => handleDelete(tx.id)}
-                    className="p-1 text-gray-300 hover:text-rose-400 rounded transition-colors"
+                    className="p-1 text-muted hover:text-rose-400 rounded transition-colors"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -413,7 +413,7 @@ export default function TransactionsPage() {
         title={editingTx ? "Edit Transaction" : "Add Transaction"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex gap-1.5 bg-gray-100 p-1 rounded-xl">
+          <div className="flex gap-1.5 bg-accent p-1 rounded-xl">
             {(["expense", "income"] as const).map((t) => (
               <button
                 key={t}
@@ -424,7 +424,7 @@ export default function TransactionsPage() {
                     ? t === "income"
                       ? "bg-emerald-400 text-white shadow-sm"
                       : "bg-rose-400 text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                    : "text-muted hover:text-foreground"
                 }`}
               >
                 {t}
@@ -432,7 +432,7 @@ export default function TransactionsPage() {
             ))}
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Amount</label>
+            <label className="block text-xs font-medium text-muted mb-1.5">Amount</label>
             <input
               type="number"
               step="0.01"
@@ -440,15 +440,15 @@ export default function TransactionsPage() {
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
               required
               placeholder="0.00"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-shadow"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Category</label>
+            <label className="block text-xs font-medium text-muted mb-1.5">Category</label>
             <select
               value={form.category_id}
               onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-shadow"
             >
               <option value="">Select category</option>
               {filteredCategories.map((c) => (
@@ -459,26 +459,26 @@ export default function TransactionsPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">
-              Description <span className="text-gray-300 font-normal">(optional)</span>
+            <label className="block text-xs font-medium text-muted mb-1.5">
+              Description <span className="text-muted/60 font-normal">(optional)</span>
             </label>
             <input
               type="text"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="What was this for?"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-shadow"
             />
           </div>
           {form.type === "expense" && accounts.length > 0 && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                Paid With <span className="text-gray-300 font-normal">(optional)</span>
+              <label className="block text-xs font-medium text-muted mb-1.5">
+                Paid With <span className="text-muted/60 font-normal">(optional)</span>
               </label>
               <select
                 value={form.payment_method_id}
                 onChange={(e) => setForm({ ...form, payment_method_id: e.target.value })}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
+                className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-shadow"
               >
                 <option value="">Select card / account</option>
                 {accounts.map((a) => (
@@ -490,13 +490,13 @@ export default function TransactionsPage() {
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Date</label>
+            <label className="block text-xs font-medium text-muted mb-1.5">Date</label>
             <input
               type="date"
               value={form.date}
               onChange={(e) => setForm({ ...form, date: e.target.value })}
               required
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-shadow"
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-shadow"
             />
           </div>
           <button

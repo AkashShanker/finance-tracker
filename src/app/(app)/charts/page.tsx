@@ -39,7 +39,7 @@ const COLORS = [
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-border rounded-lg shadow-lg p-3 text-sm">
+    <div className="bg-card border border-border rounded-lg shadow-lg p-3 text-sm">
       <p className="font-medium mb-1">{label}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center gap-2">
@@ -143,6 +143,8 @@ export default function ChartsPage() {
   const nwChange = latest.netWorth - first.netWorth;
   const debtChange = latest.totalDebt - first.totalDebt;
 
+  const gridColor = "var(--border)";
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div>
@@ -159,36 +161,26 @@ export default function ChartsPage() {
         </p>
       </div>
 
-      {/* Net Worth Trend */}
       <div className="bg-card rounded-xl border border-border p-5">
         <h2 className="text-lg font-semibold mb-4">Net Worth Over Time</h2>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="netWorth"
-              name="Net Worth"
-              stroke="#3b82f6"
-              fill="#3b82f6"
-              fillOpacity={0.1}
-              strokeWidth={2}
-            />
+            <Area type="monotone" dataKey="netWorth" name="Net Worth" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Assets vs Debt */}
       <div className="bg-card rounded-xl border border-border p-5">
         <h2 className="text-lg font-semibold mb-4">Assets vs Total Debt</h2>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="totalAssets" name="Total Assets" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
@@ -197,73 +189,47 @@ export default function ChartsPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* CC Debt Trend */}
       <div className="bg-card rounded-xl border border-border p-5">
         <h2 className="text-lg font-semibold mb-4">Credit Card Debt</h2>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}K`} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="ccDebt"
-              name="CC Debt"
-              stroke="#f59e0b"
-              fill="#f59e0b"
-              fillOpacity={0.15}
-              strokeWidth={2}
-            />
+            <Area type="monotone" dataKey="ccDebt" name="CC Debt" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.15} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Individual Debt Breakdown */}
       <div className="bg-card rounded-xl border border-border p-5">
         <h2 className="text-lg font-semibold mb-4">Individual Debt Balances</h2>
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             {debtNames.map((name, i) => (
-              <Line
-                key={name}
-                type="monotone"
-                dataKey={name}
-                name={name}
-                stroke={COLORS[i % COLORS.length]}
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                connectNulls
-              />
+              <Line key={name} type="monotone" dataKey={name} name={name} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Individual Asset Breakdown */}
       {assetNames.length > 0 && (
         <div className="bg-card rounded-xl border border-border p-5">
           <h2 className="text-lg font-semibold mb-4">Asset Balances</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               {assetNames.map((name, i) => (
-                <Bar
-                  key={name}
-                  dataKey={name}
-                  name={name}
-                  fill={COLORS[i % COLORS.length]}
-                  stackId="assets"
-                />
+                <Bar key={name} dataKey={name} name={name} fill={COLORS[i % COLORS.length]} stackId="assets" />
               ))}
             </BarChart>
           </ResponsiveContainer>

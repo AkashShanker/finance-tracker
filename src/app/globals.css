@@ -75,6 +75,8 @@
   --color-border: var(--border);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-hover-bg: var(--hover-bg);
+  --color-ring: var(--ring);
 }
 
 body {

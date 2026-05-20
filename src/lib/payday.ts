@@ -92,8 +92,21 @@ export function getNextDueDate(bill: {
   }
 
   if (bill.schedule_type === "every_other_payday") {
-    const upcoming = paydays.filter((d) => !isBefore(d, today));
-    return upcoming.length > 0 ? upcoming[0] : null;
+    // Use next_due_date to determine the phase (which paydays align)
+    let anchorIdx = 0;
+    if (bill.next_due_date) {
+      const anchor = parseLocalDate(bill.next_due_date);
+      let bestIdx = 0;
+      let bestDiff = Infinity;
+      for (let i = 0; i < paydays.length; i++) {
+        const diff = Math.abs(differenceInDays(paydays[i], anchor));
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+      }
+      anchorIdx = bestIdx;
+    }
+    const phase = anchorIdx % 2;
+    const match = paydays.find((d, i) => i % 2 === phase && !isBefore(d, today));
+    return match || null;
   }
 
   // All fixed-interval types: weekly, biweekly, monthly, quarterly, yearly, custom
@@ -168,7 +181,21 @@ export function getBillEvents(
         }
       }
     } else if (bill.schedule_type === "every_other_payday") {
-      const relevant = paydays.filter((d, i) => i % 2 === 0 && !isBefore(d, rangeStart) && isBefore(d, end));
+      // Use next_due_date to determine which paydays align (phase)
+      let anchorIdx = 0;
+      if (bill.next_due_date) {
+        const anchor = parseLocalDate(bill.next_due_date);
+        // Find the payday closest to the anchor to determine phase
+        let bestIdx = 0;
+        let bestDiff = Infinity;
+        for (let i = 0; i < paydays.length; i++) {
+          const diff = Math.abs(differenceInDays(paydays[i], anchor));
+          if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+        }
+        anchorIdx = bestIdx;
+      }
+      // Pick every other payday starting from the anchor's phase
+      const relevant = paydays.filter((d, i) => (i % 2 === anchorIdx % 2) && !isBefore(d, rangeStart) && isBefore(d, end));
       for (const pd of relevant) {
         events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
       }

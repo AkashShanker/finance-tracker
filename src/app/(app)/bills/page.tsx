@@ -226,10 +226,28 @@ export default function BillsPage() {
     return fallbackPaydays;
   }
 
-  // Combined paydays for calendar
-  const allPaydays = Array.from(
-    new Set([...fallbackPaydays, ...Array.from(memberPaydays.values()).flat()].map((d) => d.getTime()))
-  ).map((t) => new Date(t)).sort((a, b) => a.getTime() - b.getTime());
+  // Combined paydays for calendar — keep member association for initials
+  interface PaydayWithMember { date: Date; memberIds: string[] }
+  const paydayMap = new Map<number, string[]>();
+  for (const [memberId, pds] of memberPaydays.entries()) {
+    for (const pd of pds) {
+      const key = pd.getTime();
+      const existing = paydayMap.get(key) || [];
+      existing.push(memberId);
+      paydayMap.set(key, existing);
+    }
+  }
+  // Add fallback paydays (user's own) if not already covered by a member
+  for (const pd of fallbackPaydays) {
+    const key = pd.getTime();
+    if (!paydayMap.has(key)) {
+      paydayMap.set(key, []);
+    }
+  }
+  const allPaydaysWithMembers: PaydayWithMember[] = Array.from(paydayMap.entries())
+    .map(([time, mIds]) => ({ date: new Date(time), memberIds: mIds }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const allPaydays = allPaydaysWithMembers.map((p) => p.date);
 
   const activeBills = bills.filter((b) => b.is_active);
   const inactiveBills = bills.filter((b) => !b.is_active);
@@ -269,6 +287,20 @@ export default function BillsPage() {
       calLookback
     );
   }).sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Overdue events for list view (past 30 days)
+  const overdueEvents: BillEvent[] = activeBills.flatMap((bill) => {
+    const pd = getPaydaysForBill(bill);
+    return getBillEvents(
+      [{ ...bill, paid_by: bill.paid_by || "shared" }],
+      pd,
+      0,
+      undefined,
+      30
+    );
+  })
+    .filter((evt) => isBefore(evt.date, startOfDay(new Date())) && !paidKeys.has(`${evt.billId}|${format(evt.date, "yyyy-MM-dd")}`))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   // Paid/Overdue helpers
   function isEventPaid(billId: string, date: Date): boolean {
@@ -493,13 +525,13 @@ export default function BillsPage() {
   }
 
   function getMemberColor(memberId: string | null): string {
-    if (!memberId || memberId === "shared") return "bg-gray-100 text-gray-700";
+    if (!memberId || memberId === "shared") return "bg-accent text-muted";
     const idx = members.findIndex((m) => m.id === memberId);
     const colors = [
-      "bg-blue-50 text-blue-700",
-      "bg-purple-50 text-purple-700",
-      "bg-orange-50 text-orange-700",
-      "bg-teal-50 text-teal-700",
+      "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
+      "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400",
+      "bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400",
+      "bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400",
     ];
     return colors[idx % colors.length];
   }
@@ -519,11 +551,11 @@ export default function BillsPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex bg-gray-100 rounded-lg p-0.5">
-            <button onClick={() => setViewMode("calendar")} className={`p-2 rounded-md ${viewMode === "calendar" ? "bg-white shadow-sm" : ""}`} title="Calendar view">
+          <div className="flex bg-accent rounded-lg p-0.5">
+            <button onClick={() => setViewMode("calendar")} className={`p-2 rounded-md ${viewMode === "calendar" ? "bg-card shadow-sm" : ""}`} title="Calendar view">
               <Calendar size={18} />
             </button>
-            <button onClick={() => setViewMode("list")} className={`p-2 rounded-md ${viewMode === "list" ? "bg-white shadow-sm" : ""}`} title="List view">
+            <button onClick={() => setViewMode("list")} className={`p-2 rounded-md ${viewMode === "list" ? "bg-card shadow-sm" : ""}`} title="List view">
               <List size={18} />
             </button>
           </div>
@@ -536,6 +568,48 @@ export default function BillsPage() {
       {/* List View — bill management */}
       {viewMode === "list" && (
         <div className="space-y-6">
+              {overdueEvents.length > 0 && (
+                <div className="bg-card rounded-xl border border-danger/30 overflow-hidden">
+                  <div className="bg-rose-50 dark:bg-rose-500/10 px-4 py-3 border-b border-danger/20">
+                    <h2 className="text-sm font-semibold text-danger uppercase tracking-wide">
+                      Overdue Bills ({overdueEvents.length})
+                    </h2>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {overdueEvents.map((evt, i) => {
+                      const bill = bills.find((b) => b.id === evt.billId);
+                      const linkedDebt = bill?.debt_id ? debts.find((d) => d.id === bill.debt_id) : null;
+                      return (
+                        <div key={`${evt.billId}-${i}`} className="flex items-center justify-between p-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{evt.name}</span>
+                              <span className="text-xs text-danger font-medium">{format(evt.date, "MMM d")}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${getMemberColor(evt.paid_by)}`}>
+                                {getMemberName(evt.paid_by)}
+                              </span>
+                              {linkedDebt && (
+                                <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-full">
+                                  Debt: {formatCurrency(linkedDebt.current_balance)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{formatCurrency(evt.amount)}</span>
+                            <button
+                              onClick={() => openPay(evt)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
+                            >
+                              <Check size={14} /> Pay
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {members.map((member) => {
                 const memberBills = billsByMember.get(member.id) || [];
                 if (memberBills.length === 0) return null;
@@ -614,6 +688,8 @@ export default function BillsPage() {
           setCalMonth={setCalMonth}
           calEvents={calEvents}
           paydays={allPaydays}
+          paydaysWithMembers={allPaydaysWithMembers}
+          members={members}
           getMemberName={getMemberName}
           getMemberColor={getMemberColor}
           onPayClick={openPay}
@@ -718,7 +794,7 @@ export default function BillsPage() {
       >
         {paySuccess ? (
           <div className="space-y-4">
-            <div className={`${paySuccess.startsWith("Error") ? "bg-red-50 text-danger" : "bg-green-50 text-success"} p-4 rounded-lg text-center`}>
+            <div className={`${paySuccess.startsWith("Error") ? "bg-rose-50 dark:bg-rose-500/10 text-danger" : "bg-emerald-50 dark:bg-emerald-500/10 text-success"} p-4 rounded-lg text-center`}>
               <Check size={32} className="mx-auto mb-2" />
               <p className="font-medium">{paySuccess}</p>
             </div>
@@ -732,7 +808,7 @@ export default function BillsPage() {
         ) : (
           <form onSubmit={handlePay} className="space-y-4">
             {/* Bill info */}
-            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+            <div className="bg-accent rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Bill</span>
                 <span className="font-medium">{payingBill?.name}</span>
@@ -790,7 +866,7 @@ export default function BillsPage() {
               const linkedDebt = debts.find((d) => d.id === payingBill.debt_id);
               if (!linkedDebt) return null;
               return (
-                <div className="bg-red-50 rounded-lg p-3 space-y-3">
+                <div className="bg-rose-50 dark:bg-rose-500/10 rounded-lg p-3 space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="font-medium text-danger">Linked Debt: {linkedDebt.name}</span>
                     <span className="text-danger font-semibold">{formatCurrency(linkedDebt.current_balance)}</span>
@@ -863,7 +939,7 @@ export default function BillsPage() {
           <div className="flex gap-3">
             <button
               onClick={() => { setUndoModalOpen(false); setUndoEvent(null); }}
-              className="flex-1 py-2 px-4 border border-border rounded-lg hover:bg-gray-50 font-medium"
+              className="flex-1 py-2 px-4 border border-border rounded-lg hover:bg-accent font-medium"
             >
               Cancel
             </button>
@@ -930,9 +1006,9 @@ function BillSection({
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium">{bill.name}</p>
                     {bill.is_autopay && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Autopay</span>
+                      <span className="text-xs bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Autopay</span>
                     )}
-                    <span className="text-xs bg-gray-100 text-muted px-2 py-0.5 rounded-full">
+                    <span className="text-xs bg-accent text-muted px-2 py-0.5 rounded-full">
                       {bill.schedule_type === "every_payday" ? "Every payday" :
                        bill.schedule_type === "every_other_payday" ? "Alt. payday" :
                        bill.schedule_type === "custom" ? `Every ${bill.custom_interval_days || 30}d` :
@@ -976,7 +1052,7 @@ function BillSection({
               </div>
 
               {reassigningId === bill.id && (
-                <div className="mt-2 flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
+                <div className="mt-2 flex items-center gap-2 bg-accent p-2 rounded-lg">
                   <span className="text-sm text-muted">Move to:</span>
                   {members.map((m) => (
                     <button
@@ -986,7 +1062,7 @@ function BillSection({
                       className={`text-sm px-3 py-1 rounded-lg ${
                         bill.paid_by === m.id
                           ? "bg-primary text-white"
-                          : "bg-white border border-border hover:border-primary"
+                          : "bg-card border border-border hover:border-primary"
                       }`}
                     >
                       {m.name}{m.id === myMemberId ? " (You)" : ""}
@@ -998,7 +1074,7 @@ function BillSection({
                     className={`text-sm px-3 py-1 rounded-lg ${
                       !bill.paid_by
                         ? "bg-primary text-white"
-                        : "bg-white border border-border hover:border-primary"
+                        : "bg-card border border-border hover:border-primary"
                     }`}
                   >
                     Shared
@@ -1020,6 +1096,8 @@ function CalendarGrid({
   setCalMonth,
   calEvents,
   paydays,
+  paydaysWithMembers,
+  members,
   getMemberName,
   getMemberColor,
   onPayClick,
@@ -1033,6 +1111,8 @@ function CalendarGrid({
   setCalMonth: (d: Date) => void;
   calEvents: BillEvent[];
   paydays: Date[];
+  paydaysWithMembers: { date: Date; memberIds: string[] }[];
+  members: HouseholdMember[];
   getMemberName: (id: string | null) => string;
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
@@ -1060,7 +1140,7 @@ function CalendarGrid({
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => setCalMonth(subMonths(calMonth, 1))}
-            className="p-2 border border-border rounded-lg hover:bg-gray-50"
+            className="p-2 border border-border rounded-lg hover:bg-accent"
           >
             <ChevronLeft size={18} />
           </button>
@@ -1069,7 +1149,7 @@ function CalendarGrid({
           </h2>
           <button
             onClick={() => setCalMonth(addMonths(calMonth, 1))}
-            className="p-2 border border-border rounded-lg hover:bg-gray-50"
+            className="p-2 border border-border rounded-lg hover:bg-accent"
           >
             <ChevronRight size={18} />
           </button>
@@ -1089,11 +1169,12 @@ function CalendarGrid({
         <div className="grid grid-cols-7 gap-px bg-border">
           {paddedDays.map((day, i) => {
             if (!day) {
-              return <div key={`empty-${i}`} className="bg-gray-50 min-h-[80px]" />;
+              return <div key={`empty-${i}`} className="bg-accent min-h-[80px]" />;
             }
 
             const dayEvents = calEvents.filter((e) => isSameDay(e.date, day));
-            const isPayday = paydays.some((pd) => isSameDay(pd, day));
+            const paydayEntry = paydaysWithMembers.find((p) => isSameDay(p.date, day));
+            const isPayday = !!paydayEntry;
             const todayFlag = isToday(day);
             const isSelected = selectedDay && isSameDay(day, selectedDay);
             const dayTotal = dayEvents.reduce((sum, e) => sum + e.amount, 0);
@@ -1106,7 +1187,7 @@ function CalendarGrid({
                     ? setSelectedDay(isSelected ? null : day)
                     : null
                 }
-                className={`bg-white min-h-[80px] p-1 ${todayFlag ? "ring-2 ring-primary ring-inset" : ""} ${isSelected ? "ring-2 ring-blue-400 ring-inset" : ""} ${dayEvents.length > 0 ? "cursor-pointer hover:bg-blue-50/50" : ""}`}
+                className={`bg-card min-h-[80px] p-1 ${todayFlag ? "ring-2 ring-primary ring-inset" : ""} ${isSelected ? "ring-2 ring-blue-400 ring-inset" : ""} ${dayEvents.length > 0 ? "cursor-pointer hover:bg-accent" : ""}`}
               >
                 <div className="flex items-center justify-between mb-0.5">
                   <span
@@ -1120,10 +1201,22 @@ function CalendarGrid({
                   >
                     {format(day, "d")}
                   </span>
-                  {isPayday && (
-                    <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded font-medium">
-                      PAY
-                    </span>
+                  {isPayday && paydayEntry && (
+                    paydayEntry.memberIds.length > 0 ? (
+                      paydayEntry.memberIds.map((mId) => {
+                        const m = members.find((mem) => mem.id === mId);
+                        const initials = m ? m.name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2) : "?";
+                        return (
+                          <span key={mId} className="text-[10px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-1 rounded font-medium">
+                            {initials} Pay
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span className="text-[10px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-1 rounded font-medium">
+                        PAY
+                      </span>
+                    )
                   )}
                 </div>
                 <div className="space-y-0.5">
@@ -1135,11 +1228,11 @@ function CalendarGrid({
                         key={`${evt.billId}-${j}`}
                         className={`text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
                           paid
-                            ? "bg-green-100 text-green-700 line-through opacity-70"
+                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 line-through opacity-70"
                             : overdue
-                            ? "bg-red-100 text-red-700 font-medium"
+                            ? "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 font-medium"
                             : evt.is_autopay
-                            ? "bg-green-50 text-green-700"
+                            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                             : getMemberColor(evt.paid_by)
                         }`}
                         title={`${evt.name}: ${formatCurrency(evt.amount)} (${getMemberName(evt.paid_by)})${paid ? " ✓ Paid" : overdue ? " ⚠ Overdue" : ""}`}
@@ -1170,19 +1263,19 @@ function CalendarGrid({
         {/* Legend */}
         <div className="flex gap-4 mt-3 text-xs text-muted flex-wrap">
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-green-100 border border-green-300 rounded" /> Paid
+            <div className="w-3 h-3 bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-500/30 rounded" /> Paid
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-red-100 border border-red-300 rounded" /> Overdue
+            <div className="w-3 h-3 bg-rose-100 dark:bg-rose-500/20 border border-rose-300 dark:border-rose-500/30 rounded" /> Overdue
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-blue-50 border border-blue-200 rounded" /> Upcoming
+            <div className="w-3 h-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded" /> Upcoming
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-green-50 border border-green-200 rounded" /> Autopay
+            <div className="w-3 h-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded" /> Autopay
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">PAY</span> Payday
+            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-1 rounded">PAY</span> Payday
           </div>
         </div>
       </div>
@@ -1267,7 +1360,7 @@ function DayDetail({
             <div
               key={`${evt.billId}-${i}`}
               className={`flex items-center justify-between rounded-lg p-3 ${
-                paid ? "bg-green-50" : overdue ? "bg-red-50" : "bg-gray-50"
+                paid ? "bg-emerald-50 dark:bg-emerald-500/10" : overdue ? "bg-rose-50 dark:bg-rose-500/10" : "bg-accent"
               }`}
             >
               <div className="flex-1">
@@ -1282,7 +1375,7 @@ function DayDetail({
                     </span>
                   )}
                   {linkedDebt && (
-                    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                    <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-full">
                       Debt: {formatCurrency(linkedDebt.current_balance)}
                     </span>
                   )}
@@ -1295,7 +1388,7 @@ function DayDetail({
                 {paid ? (
                   <button
                     onClick={() => onUndoClick(evt)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-200 dark:hover:bg-emerald-500/30 transition-colors"
                     title="Click to undo payment"
                   >
                     <Check size={14} /> Paid

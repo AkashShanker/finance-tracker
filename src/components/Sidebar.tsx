@@ -182,6 +182,14 @@ export default function Sidebar() {
         )}
 
         <button
+          onClick={toggleDarkMode}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-white/5 hover:text-gray-200 w-full transition-all duration-150 mt-1"
+        >
+          {darkMode ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
+          <span className="text-[13px]">{darkMode ? "Light Mode" : "Dark Mode"}</span>
+        </button>
+
+        <button
           onClick={handleSignOut}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-white/5 hover:text-gray-200 w-full transition-all duration-150 mt-1"
         >

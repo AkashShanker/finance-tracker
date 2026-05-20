@@ -55,7 +55,6 @@ export default function HistoryPage() {
   }
 
   function openModal() {
-    // Build form balances from tracked accounts, pre-fill from latest snapshot
     const latest = snapshots.length > 0 ? snapshots[0] : null;
 
     const balances = trackedAccounts.map((a) => {
@@ -160,7 +159,6 @@ export default function HistoryPage() {
         </button>
       </div>
 
-      {/* Snapshot Timeline */}
       {snapshots.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-8 text-center text-muted">
           No snapshots yet. Click &quot;Record Payday&quot; after each paycheck to start tracking.
@@ -182,7 +180,7 @@ export default function HistoryPage() {
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpandedId(isExpanded ? null : snap.id); }}
-                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left cursor-pointer"
+                  className="w-full flex items-center justify-between p-4 hover:bg-accent text-left cursor-pointer"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
@@ -256,7 +254,6 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Record Payday Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Record Payday Snapshot">
         <form onSubmit={handleAdd} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
