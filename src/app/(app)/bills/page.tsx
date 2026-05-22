@@ -6,7 +6,7 @@ import type { Bill, Profile, HouseholdMember, Debt } from "@/lib/types";
 import { getUpcomingPaydays, getNextDueDate, daysUntil, formatDueDate, getBillEvents, advanceBillDate, reverseBillDate } from "@/lib/payday";
 import type { ScheduleType } from "@/lib/payday";
 import Modal from "@/components/Modal";
-import { Plus, Trash2, Pencil, ToggleLeft, ToggleRight, Calendar, List, ArrowRightLeft, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Pencil, ToggleLeft, ToggleRight, Calendar, List, ArrowRightLeft, Check, ChevronLeft, ChevronRight, SkipForward, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isSameDay, isSameMonth, isToday, isBefore, startOfDay } from "date-fns";
 
@@ -76,6 +76,18 @@ export default function BillsPage() {
   const [undoEvent, setUndoEvent] = useState<BillEvent | null>(null);
   const [undoing, setUndoing] = useState(false);
 
+  // Skip modal
+  const [skipModalOpen, setSkipModalOpen] = useState(false);
+  const [skippingEvent, setSkippingEvent] = useState<BillEvent | null>(null);
+  const [skipReason, setSkipReason] = useState("");
+  const [skipping, setSkipping] = useState(false);
+
+  // Skipped tracking: set of "billId|YYYY-MM-DD" keys
+  const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
+
+  // Pay again mode (don't advance due date)
+  const [payAgainMode, setPayAgainMode] = useState(false);
+
   useEffect(() => { load(); }, []);
 
   async function load() {
@@ -88,19 +100,21 @@ export default function BillsPage() {
     if (!prof?.household_id) return;
     setProfile(prof);
 
-    const [billsRes, membersRes, debtsRes, txRes] = await Promise.all([
+    const [billsRes, membersRes, debtsRes, txRes, skipTxRes] = await Promise.all([
       supabase.from("bills").select("*").eq("household_id", prof.household_id).order("due_day"),
       supabase.from("household_members").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("created_at"),
       supabase.from("debts").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("name"),
       supabase.from("transactions").select("description, date").eq("household_id", prof.household_id).eq("type", "expense").like("description", "Bill:%"),
+      supabase.from("transactions").select("description, date").eq("household_id", prof.household_id).eq("type", "expense").like("description", "Skipped:%"),
     ]);
 
     setBills(billsRes.data || []);
     setMembers(membersRes.data || []);
     setDebts(debtsRes.data || []);
 
-    // Build paid keys from existing transactions
     const fetchedBills = billsRes.data || [];
+
+    // Build paid keys from "Bill:" transactions
     const keys = new Set<string>();
     for (const tx of txRes.data || []) {
       const billName = tx.description?.replace(/^Bill:\s*/, "").split(" — ")[0];
@@ -110,6 +124,17 @@ export default function BillsPage() {
       }
     }
     setPaidKeys(keys);
+
+    // Build skipped keys from "Skipped:" transactions
+    const sKeys = new Set<string>();
+    for (const tx of skipTxRes.data || []) {
+      const billName = tx.description?.replace(/^Skipped:\s*/, "").split(" — ")[0];
+      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
+      if (matchedBill && tx.date) {
+        sKeys.add(`${matchedBill.id}|${tx.date}`);
+      }
+    }
+    setSkippedKeys(sKeys);
     setLoading(false);
   }
 
@@ -288,7 +313,7 @@ export default function BillsPage() {
     );
   }).sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  // Overdue events for list view (past 30 days)
+  // Overdue events for list view (past 30 days, excluding paid and skipped)
   const overdueEvents: BillEvent[] = activeBills.flatMap((bill) => {
     const pd = getPaydaysForBill(bill);
     return getBillEvents(
@@ -299,7 +324,10 @@ export default function BillsPage() {
       30
     );
   })
-    .filter((evt) => isBefore(evt.date, startOfDay(new Date())) && !paidKeys.has(`${evt.billId}|${format(evt.date, "yyyy-MM-dd")}`))
+    .filter((evt) => {
+      const key = `${evt.billId}|${format(evt.date, "yyyy-MM-dd")}`;
+      return isBefore(evt.date, startOfDay(new Date())) && !paidKeys.has(key) && !skippedKeys.has(key);
+    })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   // Paid/Overdue helpers
@@ -307,13 +335,17 @@ export default function BillsPage() {
     return paidKeys.has(`${billId}|${format(date, "yyyy-MM-dd")}`);
   }
 
+  function isEventSkipped(billId: string, date: Date): boolean {
+    return skippedKeys.has(`${billId}|${format(date, "yyyy-MM-dd")}`);
+  }
+
   function isEventOverdue(billId: string, date: Date): boolean {
     const today = startOfDay(new Date());
-    return !isEventPaid(billId, date) && isBefore(date, today);
+    return !isEventPaid(billId, date) && !isEventSkipped(billId, date) && isBefore(date, today);
   }
 
   // Open pay modal
-  function openPay(event: BillEvent) {
+  function openPay(event: BillEvent, againMode = false) {
     const bill = bills.find((b) => b.id === event.billId);
     if (!bill) return;
 
@@ -332,7 +364,15 @@ export default function BillsPage() {
     );
     setPayNotes("");
     setPaySuccess("");
+    setPayAgainMode(againMode);
     setPayModalOpen(true);
+  }
+
+  // Open skip modal
+  function openSkip(event: BillEvent) {
+    setSkippingEvent(event);
+    setSkipReason("");
+    setSkipModalOpen(true);
   }
 
   // Handle mark as paid
@@ -394,43 +434,46 @@ export default function BillsPage() {
         return;
       }
 
-      // 3. Advance bill's next_due_date
-      const pd = getPaydaysForBill(payingBill);
-      const nextDue = getNextDueDate(payingBill, pd);
-      if (nextDue) {
-        let advancedDate: string | null = null;
+      // 3. Advance bill's next_due_date (skip if pay-again mode)
+      if (!payAgainMode) {
+        const pd = getPaydaysForBill(payingBill);
+        const nextDue = getNextDueDate(payingBill, pd);
+        if (nextDue) {
+          let advancedDate: string | null = null;
 
-        if (
-          payingBill.schedule_type === "every_payday" ||
-          payingBill.schedule_type === "every_other_payday"
-        ) {
-          const step = payingBill.schedule_type === "every_other_payday" ? 2 : 1;
-          const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
-          if (futurePd.length >= step) {
-            advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
+          if (
+            payingBill.schedule_type === "every_payday" ||
+            payingBill.schedule_type === "every_other_payday"
+          ) {
+            const step = payingBill.schedule_type === "every_other_payday" ? 2 : 1;
+            const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
+            if (futurePd.length >= step) {
+              advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
+            }
+          } else {
+            const next = advanceBillDate(
+              nextDue,
+              payingBill.schedule_type,
+              payingBill.custom_interval_days
+            );
+            advancedDate = format(next, "yyyy-MM-dd");
           }
-        } else {
-          const next = advanceBillDate(
-            nextDue,
-            payingBill.schedule_type,
-            payingBill.custom_interval_days
-          );
-          advancedDate = format(next, "yyyy-MM-dd");
-        }
 
-        if (advancedDate) {
-          const { error: billError } = await supabase
-            .from("bills")
-            .update({ next_due_date: advancedDate })
-            .eq("id", payingBill.id);
+          if (advancedDate) {
+            const { error: billError } = await supabase
+              .from("bills")
+              .update({ next_due_date: advancedDate })
+              .eq("id", payingBill.id);
 
-          if (billError) {
-            console.error("Failed to advance bill date:", billError);
+            if (billError) {
+              console.error("Failed to advance bill date:", billError);
+            }
           }
         }
       }
 
-      // 3. Update linked debt balance if applicable
+      // 4. Update linked debt balance if applicable
+      let debtPaidOff = false;
       if (payingBill.debt_id && payNewDebtBalance !== "") {
         const newBalance = parseFloat(payNewDebtBalance);
         const { error: debtError } = await supabase
@@ -440,6 +483,12 @@ export default function BillsPage() {
 
         if (debtError) {
           console.error("Failed to update debt balance:", debtError);
+        }
+
+        // If debt is fully paid off, deactivate the bill
+        if (newBalance === 0) {
+          debtPaidOff = true;
+          await supabase.from("bills").update({ is_active: false }).eq("id", payingBill.id);
         }
       }
 
@@ -451,9 +500,15 @@ export default function BillsPage() {
       });
 
       setPaying(false);
-      setPaySuccess(
-        `Paid ${formatCurrency(amount)} for ${payingBill.name}${payingBill.debt_id ? ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}` : ""}`
-      );
+      let successMsg = payAgainMode
+        ? `Extra payment of ${formatCurrency(amount)} recorded for ${payingBill.name}`
+        : `Paid ${formatCurrency(amount)} for ${payingBill.name}`;
+      if (debtPaidOff) {
+        successMsg += ` — debt paid off! Bill deactivated.`;
+      } else if (payingBill.debt_id && payNewDebtBalance !== "") {
+        successMsg += ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}`;
+      }
+      setPaySuccess(successMsg);
 
       load();
     } catch (err) {
@@ -521,6 +576,105 @@ export default function BillsPage() {
       console.error("Undo error:", err);
     } finally {
       setUndoing(false);
+    }
+  }
+
+  // Handle skip
+  async function handleSkip() {
+    if (!skippingEvent || !profile?.household_id) return;
+    setSkipping(true);
+
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setSkipping(false); return; }
+
+      const bill = bills.find((b) => b.id === skippingEvent.billId);
+      if (!bill) { setSkipping(false); return; }
+
+      const skipDate = format(skippingEvent.date, "yyyy-MM-dd");
+
+      // Find or create "Bills" category
+      let billsCategoryId: string | null = null;
+      const { data: existingCat } = await supabase
+        .from("categories").select("id")
+        .eq("household_id", profile.household_id).eq("name", "Bills").eq("type", "expense").single();
+      if (existingCat) {
+        billsCategoryId = existingCat.id;
+      } else {
+        const { data: newCat } = await supabase
+          .from("categories")
+          .insert({ household_id: profile.household_id, name: "Bills", type: "expense", icon: "🧾" })
+          .select("id").single();
+        if (newCat) billsCategoryId = newCat.id;
+      }
+
+      // Create $0 transaction to track the skip
+      await supabase.from("transactions").insert({
+        household_id: profile.household_id,
+        user_id: user.id,
+        amount: 0,
+        type: "expense",
+        category_id: billsCategoryId,
+        description: `Skipped: ${bill.name}${skipReason ? ` — ${skipReason}` : ""}`,
+        date: skipDate,
+      });
+
+      // Advance bill's next_due_date
+      const pd = getPaydaysForBill(bill);
+      const nextDue = getNextDueDate(bill, pd);
+      if (nextDue) {
+        let advancedDate: string | null = null;
+        if (bill.schedule_type === "every_payday" || bill.schedule_type === "every_other_payday") {
+          const step = bill.schedule_type === "every_other_payday" ? 2 : 1;
+          const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
+          if (futurePd.length >= step) advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
+        } else {
+          advancedDate = format(advanceBillDate(nextDue, bill.schedule_type, bill.custom_interval_days), "yyyy-MM-dd");
+        }
+        if (advancedDate) {
+          await supabase.from("bills").update({ next_due_date: advancedDate }).eq("id", bill.id);
+        }
+      }
+
+      // Track locally
+      setSkippedKeys((prev) => { const next = new Set(prev); next.add(`${bill.id}|${skipDate}`); return next; });
+
+      setSkipModalOpen(false);
+      setSkippingEvent(null);
+      load();
+    } catch (err) {
+      console.error("Skip error:", err);
+    } finally {
+      setSkipping(false);
+    }
+  }
+
+  // Undo skip (reuses same pattern as undo pay)
+  async function handleUndoSkip(event: BillEvent) {
+    if (!profile?.household_id) return;
+    try {
+      const supabase = createClient();
+      const bill = bills.find((b) => b.id === event.billId);
+      const dateStr = format(event.date, "yyyy-MM-dd");
+
+      const { data: matchingTx } = await supabase
+        .from("transactions").select("id")
+        .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+        .like("description", `Skipped: ${bill?.name || ""}%`).limit(1);
+
+      if (matchingTx && matchingTx.length > 0) {
+        await supabase.from("transactions").delete().eq("id", matchingTx[0].id);
+      }
+
+      if (bill) {
+        await supabase.from("bills").update({ next_due_date: dateStr }).eq("id", bill.id);
+      }
+
+      setSkippedKeys((prev) => { const next = new Set(prev); next.delete(`${event.billId}|${dateStr}`); return next; });
+      load();
+    } catch (err) {
+      console.error("Undo skip error:", err);
     }
   }
 
@@ -595,8 +749,14 @@ export default function BillsPage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <span className="font-semibold">{formatCurrency(evt.amount)}</span>
+                            <button
+                              onClick={() => openSkip(evt)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-500/30 text-sm font-medium"
+                            >
+                              <SkipForward size={14} /> Skip
+                            </button>
                             <button
                               onClick={() => openPay(evt)}
                               className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
@@ -694,10 +854,14 @@ export default function BillsPage() {
           getMemberColor={getMemberColor}
           onPayClick={openPay}
           onUndoClick={openUndo}
+          onSkipClick={openSkip}
+          onPayAgainClick={(evt: BillEvent) => openPay(evt, true)}
+          onUndoSkipClick={handleUndoSkip}
           bills={bills}
           debts={debts}
           isEventPaid={isEventPaid}
           isEventOverdue={isEventOverdue}
+          isEventSkipped={isEventSkipped}
         />
       )}
 
@@ -790,7 +954,7 @@ export default function BillsPage() {
       <Modal
         open={payModalOpen}
         onClose={() => setPayModalOpen(false)}
-        title={paySuccess ? (paySuccess.startsWith("Error") ? "Payment Failed" : "Payment Recorded") : `Pay: ${payingBill?.name || ""}`}
+        title={paySuccess ? (paySuccess.startsWith("Error") ? "Payment Failed" : "Payment Recorded") : `${payAgainMode ? "Pay Again" : "Pay"}: ${payingBill?.name || ""}`}
       >
         {paySuccess ? (
           <div className="space-y-4">
@@ -916,7 +1080,7 @@ export default function BillsPage() {
               disabled={paying}
               className="w-full py-2 px-4 bg-success text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
             >
-              {paying ? "Recording..." : `Mark Paid — ${formatCurrency(parseFloat(payAmount || "0"))}`}
+              {paying ? "Recording..." : `${payAgainMode ? "Record Extra Payment" : "Mark Paid"} — ${formatCurrency(parseFloat(payAmount || "0"))}`}
             </button>
           </form>
         )}
@@ -949,6 +1113,61 @@ export default function BillsPage() {
               className="flex-1 py-2 px-4 bg-danger text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
             >
               {undoing ? "Undoing..." : "Undo Payment"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Skip Modal */}
+      <Modal
+        open={skipModalOpen}
+        onClose={() => { setSkipModalOpen(false); setSkippingEvent(null); }}
+        title={`Skip: ${skippingEvent ? bills.find((b) => b.id === skippingEvent.billId)?.name : ""}`}
+      >
+        <div className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3 space-y-1">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted">Bill</span>
+              <span className="font-medium">{skippingEvent ? bills.find((b) => b.id === skippingEvent.billId)?.name : ""}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted">Due Date</span>
+              <span>{skippingEvent ? format(skippingEvent.date, "MMM d, yyyy") : "—"}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted">Amount</span>
+              <span className="line-through text-muted">{skippingEvent ? formatCurrency(skippingEvent.amount) : ""}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Reason <span className="text-muted font-normal">(optional)</span></label>
+            <input
+              type="text"
+              value={skipReason}
+              onChange={(e) => setSkipReason(e.target.value)}
+              placeholder="e.g. Overpaid last month, not due this cycle"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <p className="text-xs text-muted">
+            Skipping will advance this bill to the next due date without recording a payment. A $0 entry will be saved for tracking.
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setSkipModalOpen(false); setSkippingEvent(null); }}
+              className="flex-1 py-2 px-4 border border-border rounded-lg hover:bg-accent font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSkip}
+              disabled={skipping}
+              className="flex-1 py-2 px-4 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium disabled:opacity-50"
+            >
+              {skipping ? "Skipping..." : "Skip This Bill"}
             </button>
           </div>
         </div>
@@ -1102,10 +1321,14 @@ function CalendarGrid({
   getMemberColor,
   onPayClick,
   onUndoClick,
+  onSkipClick,
+  onPayAgainClick,
+  onUndoSkipClick,
   bills,
   debts,
   isEventPaid,
   isEventOverdue,
+  isEventSkipped,
 }: {
   calMonth: Date;
   setCalMonth: (d: Date) => void;
@@ -1117,10 +1340,14 @@ function CalendarGrid({
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
   onUndoClick: (event: BillEvent) => void;
+  onSkipClick: (event: BillEvent) => void;
+  onPayAgainClick: (event: BillEvent) => void;
+  onUndoSkipClick: (event: BillEvent) => void;
   bills: Bill[];
   debts: Debt[];
   isEventPaid: (billId: string, date: Date) => boolean;
   isEventOverdue: (billId: string, date: Date) => boolean;
+  isEventSkipped: (billId: string, date: Date) => boolean;
 }) {
   const monthStart = startOfMonth(calMonth);
   const monthEnd = endOfMonth(calMonth);
@@ -1222,6 +1449,7 @@ function CalendarGrid({
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((evt, j) => {
                     const paid = isEventPaid(evt.billId, evt.date);
+                    const skipped = isEventSkipped(evt.billId, evt.date);
                     const overdue = isEventOverdue(evt.billId, evt.date);
                     return (
                       <div
@@ -1229,17 +1457,19 @@ function CalendarGrid({
                         className={`text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
                           paid
                             ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 line-through opacity-70"
+                            : skipped
+                            ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 line-through opacity-70"
                             : overdue
                             ? "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 font-medium"
                             : evt.is_autopay
                             ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                             : getMemberColor(evt.paid_by)
                         }`}
-                        title={`${evt.name}: ${formatCurrency(evt.amount)} (${getMemberName(evt.paid_by)})${paid ? " ✓ Paid" : overdue ? " ⚠ Overdue" : ""}`}
+                        title={`${evt.name}: ${formatCurrency(evt.amount)} (${getMemberName(evt.paid_by)})${paid ? " ✓ Paid" : skipped ? " ⏭ Skipped" : overdue ? " ⚠ Overdue" : ""}`}
                       >
-                        {paid ? "✓ " : overdue ? "! " : ""}
-                        {evt.name.length > (paid || overdue ? 10 : 12)
-                          ? evt.name.slice(0, paid || overdue ? 10 : 12) + "…"
+                        {paid ? "✓ " : skipped ? "⏭ " : overdue ? "! " : ""}
+                        {evt.name.length > (paid || skipped || overdue ? 10 : 12)
+                          ? evt.name.slice(0, paid || skipped || overdue ? 10 : 12) + "…"
                           : evt.name}
                       </div>
                     );
@@ -1272,6 +1502,9 @@ function CalendarGrid({
             <div className="w-3 h-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded" /> Upcoming
           </div>
           <div className="flex items-center gap-1">
+            <div className="w-3 h-3 bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/30 rounded" /> Skipped
+          </div>
+          <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded" /> Autopay
           </div>
           <div className="flex items-center gap-1">
@@ -1289,10 +1522,14 @@ function CalendarGrid({
           getMemberColor={getMemberColor}
           onPayClick={onPayClick}
           onUndoClick={onUndoClick}
+          onSkipClick={onSkipClick}
+          onPayAgainClick={onPayAgainClick}
+          onUndoSkipClick={onUndoSkipClick}
           bills={bills}
           debts={debts}
           isEventPaid={isEventPaid}
           isEventOverdue={isEventOverdue}
+          isEventSkipped={isEventSkipped}
           onClose={() => setSelectedDay(null)}
         />
       )}
@@ -1309,10 +1546,14 @@ function DayDetail({
   getMemberColor,
   onPayClick,
   onUndoClick,
+  onSkipClick,
+  onPayAgainClick,
+  onUndoSkipClick,
   bills,
   debts,
   isEventPaid,
   isEventOverdue,
+  isEventSkipped,
   onClose,
 }: {
   day: Date;
@@ -1321,10 +1562,14 @@ function DayDetail({
   getMemberColor: (id: string | null) => string;
   onPayClick: (event: BillEvent) => void;
   onUndoClick: (event: BillEvent) => void;
+  onSkipClick: (event: BillEvent) => void;
+  onPayAgainClick: (event: BillEvent) => void;
+  onUndoSkipClick: (event: BillEvent) => void;
   bills: Bill[];
   debts: Debt[];
   isEventPaid: (billId: string, date: Date) => boolean;
   isEventOverdue: (billId: string, date: Date) => boolean;
+  isEventSkipped: (billId: string, date: Date) => boolean;
   onClose: () => void;
 }) {
   const total = events.reduce((sum, e) => sum + e.amount, 0);
@@ -1354,23 +1599,27 @@ function DayDetail({
             ? debts.find((d) => d.id === bill.debt_id)
             : null;
           const paid = isEventPaid(evt.billId, evt.date);
+          const skipped = isEventSkipped(evt.billId, evt.date);
           const overdue = isEventOverdue(evt.billId, evt.date);
 
           return (
             <div
               key={`${evt.billId}-${i}`}
               className={`flex items-center justify-between rounded-lg p-3 ${
-                paid ? "bg-emerald-50 dark:bg-emerald-500/10" : overdue ? "bg-rose-50 dark:bg-rose-500/10" : "bg-accent"
+                paid ? "bg-emerald-50 dark:bg-emerald-500/10"
+                : skipped ? "bg-amber-50 dark:bg-amber-500/10"
+                : overdue ? "bg-rose-50 dark:bg-rose-500/10"
+                : "bg-accent"
               }`}
             >
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`font-medium ${paid ? "line-through text-muted" : ""}`}>{evt.name}</span>
+                  <span className={`font-medium ${paid || skipped ? "line-through text-muted" : ""}`}>{evt.name}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${getMemberColor(evt.paid_by)}`}>
                     {getMemberName(evt.paid_by)}
                   </span>
                   {evt.is_autopay && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    <span className="text-xs bg-green-100 dark:bg-emerald-500/20 text-green-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">
                       Autopay
                     </span>
                   )}
@@ -1381,32 +1630,65 @@ function DayDetail({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`font-semibold ${paid ? "line-through text-muted" : ""}`}>
+              <div className="flex items-center gap-2">
+                <span className={`font-semibold ${paid || skipped ? "line-through text-muted" : ""}`}>
                   {formatCurrency(evt.amount)}
                 </span>
                 {paid ? (
+                  <>
+                    <button
+                      onClick={() => onPayAgainClick(evt)}
+                      className="flex items-center gap-1 px-2 py-1.5 text-muted hover:text-foreground rounded-lg text-xs font-medium hover:bg-accent transition-colors"
+                      title="Record an extra payment"
+                    >
+                      <RotateCcw size={12} /> Pay Again
+                    </button>
+                    <button
+                      onClick={() => onUndoClick(evt)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-200 dark:hover:bg-emerald-500/30 transition-colors"
+                      title="Click to undo payment"
+                    >
+                      <Check size={14} /> Paid
+                    </button>
+                  </>
+                ) : skipped ? (
                   <button
-                    onClick={() => onUndoClick(evt)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-200 dark:hover:bg-emerald-500/30 transition-colors"
-                    title="Click to undo payment"
+                    onClick={() => onUndoSkipClick(evt)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors"
+                    title="Click to undo skip"
                   >
-                    <Check size={14} /> Paid
+                    <SkipForward size={14} /> Skipped
                   </button>
                 ) : overdue ? (
-                  <button
-                    onClick={() => onPayClick(evt)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
-                  >
-                    <Check size={14} /> Pay
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onSkipClick(evt)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-200 dark:hover:bg-amber-500/30"
+                    >
+                      <SkipForward size={14} /> Skip
+                    </button>
+                    <button
+                      onClick={() => onPayClick(evt)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg hover:opacity-90 text-sm font-medium"
+                    >
+                      <Check size={14} /> Pay
+                    </button>
+                  </>
                 ) : (
-                  <button
-                    onClick={() => onPayClick(evt)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium"
-                  >
-                    <Check size={14} /> Pay
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onSkipClick(evt)}
+                      className="flex items-center gap-1 px-2 py-1.5 text-muted hover:text-amber-600 dark:hover:text-amber-400 rounded-lg text-xs font-medium hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                    >
+                      <SkipForward size={12} /> Skip
+                    </button>
+                    <button
+                      onClick={() => onPayClick(evt)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-hover text-sm font-medium"
+                    >
+                      <Check size={14} /> Pay
+                    </button>
+                  </>
                 )}
               </div>
             </div>
