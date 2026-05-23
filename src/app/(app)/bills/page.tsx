@@ -17,6 +17,7 @@ const EMPTY_FORM = {
   amount: "",
   due_day: "",
   next_due_date: "",
+  end_date: "",
   frequency: "monthly" as Bill["frequency"],
   schedule_type: "monthly" as Bill["schedule_type"],
   custom_interval_days: "" as string,
@@ -161,6 +162,7 @@ export default function BillsPage() {
       amount: String(bill.amount),
       due_day: bill.due_day ? String(bill.due_day) : "",
       next_due_date: bill.next_due_date || "",
+      end_date: bill.end_date || "",
       frequency: bill.frequency,
       schedule_type: bill.schedule_type || "monthly",
       custom_interval_days: bill.custom_interval_days ? String(bill.custom_interval_days) : "",
@@ -177,7 +179,7 @@ export default function BillsPage() {
     if (!profile?.household_id) return;
 
     const supabase = createClient();
-    const payload = {
+    const payload: Record<string, unknown> = {
       household_id: profile.household_id,
       name: form.name,
       amount: parseFloat(form.amount),
@@ -191,6 +193,8 @@ export default function BillsPage() {
       category: form.category,
       is_autopay: form.is_autopay,
     };
+    if (form.end_date) payload.end_date = form.end_date;
+    else payload.end_date = null;
 
     if (editingId) {
       const { error } = await supabase.from("bills").update(payload).eq("id", editingId);
@@ -473,7 +477,6 @@ export default function BillsPage() {
       }
 
       // 4. Update linked debt balance if applicable
-      let debtPaidOff = false;
       if (payingBill.debt_id && payNewDebtBalance !== "") {
         const newBalance = parseFloat(payNewDebtBalance);
         const { error: debtError } = await supabase
@@ -483,12 +486,6 @@ export default function BillsPage() {
 
         if (debtError) {
           console.error("Failed to update debt balance:", debtError);
-        }
-
-        // If debt is fully paid off, deactivate the bill
-        if (newBalance === 0) {
-          debtPaidOff = true;
-          await supabase.from("bills").update({ is_active: false }).eq("id", payingBill.id);
         }
       }
 
@@ -503,10 +500,11 @@ export default function BillsPage() {
       let successMsg = payAgainMode
         ? `Extra payment of ${formatCurrency(amount)} recorded for ${payingBill.name}`
         : `Paid ${formatCurrency(amount)} for ${payingBill.name}`;
-      if (debtPaidOff) {
-        successMsg += ` — debt paid off! Bill deactivated.`;
-      } else if (payingBill.debt_id && payNewDebtBalance !== "") {
-        successMsg += ` — debt updated to ${formatCurrency(parseFloat(payNewDebtBalance))}`;
+      if (payingBill.debt_id && payNewDebtBalance !== "") {
+        const nb = parseFloat(payNewDebtBalance);
+        successMsg += nb === 0
+          ? ` — debt paid off!`
+          : ` — debt updated to ${formatCurrency(nb)}`;
       }
       setPaySuccess(successMsg);
 
@@ -942,6 +940,12 @@ export default function BillsPage() {
           <div className="flex items-center gap-2">
             <input type="checkbox" id="autopay" checked={form.is_autopay} onChange={(e) => setForm({ ...form, is_autopay: e.target.checked })} className="rounded" />
             <label htmlFor="autopay" className="text-sm">Autopay enabled</label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">End Date <span className="text-muted font-normal">(optional)</span></label>
+            <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+            <p className="text-xs text-muted mt-1">For installment plans — bill stops generating after this date</p>
           </div>
 
           <button type="submit" className="w-full py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-hover font-medium">

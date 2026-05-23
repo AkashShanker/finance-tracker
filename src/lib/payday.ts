@@ -162,6 +162,8 @@ export function getBillEvents(
     custom_interval_days?: number | null;
     is_autopay: boolean;
     paid_by: string;
+    end_date?: string | null;
+    created_at?: string;
   }>,
   paydays: Date[],
   daysAhead: number = 60,
@@ -174,18 +176,27 @@ export function getBillEvents(
   const events: Array<{ date: Date; billId: string; name: string; amount: number; is_autopay: boolean; paid_by: string }> = [];
 
   for (const bill of bills) {
+    // Floor: don't generate events before the bill was created
+    const createdFloor = bill.created_at ? startOfDay(new Date(bill.created_at)) : null;
+    // Ceiling: don't generate events after end_date
+    const endCeiling = bill.end_date ? startOfDay(parseLocalDate(bill.end_date)) : null;
+
+    const isInBounds = (d: Date) => {
+      if (createdFloor && isBefore(d, createdFloor)) return false;
+      if (endCeiling && isBefore(endCeiling, d)) return false;
+      return true;
+    };
+
     if (bill.schedule_type === "every_payday") {
       for (const pd of paydays) {
-        if (!isBefore(pd, rangeStart) && isBefore(pd, end)) {
+        if (!isBefore(pd, rangeStart) && isBefore(pd, end) && isInBounds(pd)) {
           events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
         }
       }
     } else if (bill.schedule_type === "every_other_payday") {
-      // Use next_due_date to determine which paydays align (phase)
       let anchorIdx = 0;
       if (bill.next_due_date) {
         const anchor = parseLocalDate(bill.next_due_date);
-        // Find the payday closest to the anchor to determine phase
         let bestIdx = 0;
         let bestDiff = Infinity;
         for (let i = 0; i < paydays.length; i++) {
@@ -194,8 +205,7 @@ export function getBillEvents(
         }
         anchorIdx = bestIdx;
       }
-      // Pick every other payday starting from the anchor's phase
-      const relevant = paydays.filter((d, i) => (i % 2 === anchorIdx % 2) && !isBefore(d, rangeStart) && isBefore(d, end));
+      const relevant = paydays.filter((d, i) => (i % 2 === anchorIdx % 2) && !isBefore(d, rangeStart) && isBefore(d, end) && isInBounds(d));
       for (const pd of relevant) {
         events.push({ date: pd, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
       }
@@ -211,7 +221,7 @@ export function getBillEvents(
         while (backIter < 52) {
           const prev = reverseBillDate(pastDue, bill.schedule_type, bill.custom_interval_days);
           if (isBefore(prev, rangeStart)) break;
-          pastDates.unshift(prev);
+          if (isInBounds(prev)) pastDates.unshift(prev);
           pastDue = prev;
           backIter++;
         }
@@ -221,6 +231,7 @@ export function getBillEvents(
       }
       let iterations = 0;
       while (isBefore(due, end) && iterations < 52) {
+        if (!isInBounds(due)) { due = advanceBillDate(due, bill.schedule_type, bill.custom_interval_days); iterations++; continue; }
         events.push({ date: due, billId: bill.id, name: bill.name, amount: bill.amount, is_autopay: bill.is_autopay, paid_by: bill.paid_by });
         due = advanceBillDate(due, bill.schedule_type, bill.custom_interval_days);
         iterations++;

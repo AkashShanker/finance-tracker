@@ -53,6 +53,7 @@ export interface Bill {
   custom_interval_days: number | null;
   paid_by: string | null;
   debt_id: string | null;
+  end_date: string | null;
   category: string;
   is_autopay: boolean;
   is_active: boolean;
