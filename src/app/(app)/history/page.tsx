@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { getTodayString } from "@/lib/timezone";
 import type { Profile, Snapshot, SnapshotBalance, TrackedAccount, Debt } from "@/lib/types";
 import Modal from "@/components/Modal";
-import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function HistoryPage() {
@@ -15,6 +15,7 @@ export default function HistoryPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -77,6 +78,7 @@ export default function HistoryPage() {
       };
     });
 
+    setEditingId(null);
     setForm({
       date: getTodayString(),
       label: "",
@@ -86,40 +88,94 @@ export default function HistoryPage() {
     setModalOpen(true);
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  function openEdit(snap: Snapshot) {
+    const balances = trackedAccounts.map((a) => {
+      const existing = snap.balances?.find((b) => b.account_name === a.name);
+      return {
+        name: a.name,
+        type: a.account_type,
+        balance: existing ? String(existing.balance) : "",
+        sort_order: a.sort_order,
+      };
+    });
+
+    // Include any accounts in the snapshot that aren't in current tracked accounts
+    const trackedNames = new Set(trackedAccounts.map((a) => a.name));
+    for (const b of snap.balances || []) {
+      if (!trackedNames.has(b.account_name)) {
+        balances.push({
+          name: b.account_name,
+          type: b.account_type,
+          balance: String(b.balance),
+          sort_order: b.sort_order,
+        });
+      }
+    }
+
+    setEditingId(snap.id);
+    setForm({
+      date: snap.date,
+      label: snap.label || "",
+      notes: snap.notes || "",
+      balances,
+    });
+    setModalOpen(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!profile?.household_id) return;
 
     const supabase = createClient();
 
-    const { data: snapshot, error: snapError } = await supabase
-      .from("snapshots")
-      .insert({
-        household_id: profile.household_id,
-        date: form.date,
-        label: form.label || null,
-        notes: form.notes || null,
-      })
-      .select("id")
-      .single();
-
-    if (snapError || !snapshot) return;
-
     const balanceRows = form.balances
       .filter((b) => b.balance !== "" && b.balance !== "0")
       .map((b) => ({
-        snapshot_id: snapshot.id,
+        snapshot_id: "", // filled below
         account_name: b.name,
         account_type: b.type,
         balance: parseFloat(b.balance),
         sort_order: b.sort_order,
       }));
 
-    if (balanceRows.length > 0) {
-      await supabase.from("snapshot_balances").insert(balanceRows);
+    if (editingId) {
+      // Update existing snapshot
+      await supabase
+        .from("snapshots")
+        .update({ date: form.date, label: form.label || null, notes: form.notes || null })
+        .eq("id", editingId);
+
+      // Replace all balances: delete old, insert new
+      await supabase.from("snapshot_balances").delete().eq("snapshot_id", editingId);
+      if (balanceRows.length > 0) {
+        await supabase.from("snapshot_balances").insert(
+          balanceRows.map((b) => ({ ...b, snapshot_id: editingId }))
+        );
+      }
+    } else {
+      // Create new snapshot
+      const { data: snapshot, error: snapError } = await supabase
+        .from("snapshots")
+        .insert({
+          household_id: profile.household_id,
+          date: form.date,
+          label: form.label || null,
+          notes: form.notes || null,
+        })
+        .select("id")
+        .single();
+
+      if (snapError || !snapshot) return;
+
+      if (balanceRows.length > 0) {
+        await supabase.from("snapshot_balances").insert(
+          balanceRows.map((b) => ({ ...b, snapshot_id: snapshot.id }))
+        );
+      }
     }
 
     setModalOpen(false);
+    setEditingId(null);
     load();
   }
 
@@ -210,8 +266,16 @@ export default function HistoryPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={(e) => { e.stopPropagation(); openEdit(snap); }}
+                      className="p-1 text-muted hover:text-primary"
+                      title="Edit snapshot"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(snap.id); }}
                       className="p-1 text-muted hover:text-danger"
+                      title="Delete snapshot"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -264,8 +328,8 @@ export default function HistoryPage() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Record Payday Snapshot">
-        <form onSubmit={handleAdd} className="space-y-4">
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Snapshot" : "Record Payday Snapshot"}>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Date</label>
@@ -339,7 +403,7 @@ export default function HistoryPage() {
           </div>
 
           <button type="submit" className="w-full py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-hover font-medium">
-            Save Snapshot
+            {editingId ? "Save Changes" : "Save Snapshot"}
           </button>
         </form>
       </Modal>
