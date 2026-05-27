@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
+import { CHART, PALETTE } from "@/lib/chart-colors";
 import type { Snapshot, SnapshotBalance } from "@/lib/types";
 import { useEffect, useState } from "react";
 import {
@@ -28,13 +29,6 @@ interface ChartData {
   ccDebt: number;
   [key: string]: string | number;
 }
-
-const COLORS = [
-  "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
-  "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-  "#14b8a6", "#e11d48", "#a855f7", "#0ea5e9", "#65a30d",
-  "#d946ef",
-];
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null;
@@ -69,16 +63,31 @@ export default function ChartsPage() {
       .from("profiles").select("household_id").eq("id", user.id).single();
     if (!prof?.household_id) return;
 
-    const { data: snaps } = await supabase
-      .from("snapshots")
-      .select("*, balances:snapshot_balances(*)")
-      .eq("household_id", prof.household_id)
-      .order("date", { ascending: true });
+    // Fetch snapshots and debts in parallel
+    const [snapsRes, debtsRes] = await Promise.all([
+      supabase
+        .from("snapshots")
+        .select("*, balances:snapshot_balances(*)")
+        .eq("household_id", prof.household_id)
+        .order("date", { ascending: true }),
+      supabase
+        .from("debts")
+        .select("name, type")
+        .eq("household_id", prof.household_id),
+    ]);
 
+    const snaps = snapsRes.data;
     if (!snaps || snaps.length === 0) {
       setLoading(false);
       return;
     }
+
+    // Build a set of credit card account names from the debts table
+    const ccAccountNames = new Set(
+      (debtsRes.data || [])
+        .filter((d) => d.type === "credit_card")
+        .map((d) => d.name)
+    );
 
     const allDebtNames = new Set<string>();
     const allAssetNames = new Set<string>();
@@ -91,12 +100,7 @@ export default function ChartsPage() {
       const totalAssets = assets.reduce((s: number, b: SnapshotBalance) => s + Number(b.balance), 0);
       const totalDebt = debts.reduce((s: number, b: SnapshotBalance) => s + Number(b.balance), 0);
       const ccDebt = debts
-        .filter((b: SnapshotBalance) =>
-          b.account_name.includes("CC") ||
-          b.account_name.includes("Card") ||
-          b.account_name.includes("Slate") ||
-          b.account_name.includes("Freedom")
-        )
+        .filter((b: SnapshotBalance) => ccAccountNames.has(b.account_name))
         .reduce((s: number, b: SnapshotBalance) => s + Number(b.balance), 0);
 
       const row: ChartData = {
@@ -169,7 +173,7 @@ export default function ChartsPage() {
             <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
-            <Area type="monotone" dataKey="netWorth" name="Net Worth" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={2} />
+            <Area type="monotone" dataKey="netWorth" name="Net Worth" stroke={CHART.neutral} fill={CHART.neutral} fillOpacity={0.1} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -183,8 +187,8 @@ export default function ChartsPage() {
             <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
-            <Line type="monotone" dataKey="totalAssets" name="Total Assets" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="totalDebt" name="Total Debt" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="totalAssets" name="Total Assets" stroke={CHART.positive} strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="totalDebt" name="Total Debt" stroke={CHART.negative} strokeWidth={2} dot={{ r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -197,7 +201,7 @@ export default function ChartsPage() {
             <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}K`} stroke="var(--muted)" />
             <Tooltip content={<CustomTooltip />} />
-            <Area type="monotone" dataKey="ccDebt" name="CC Debt" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.15} strokeWidth={2} />
+            <Area type="monotone" dataKey="ccDebt" name="CC Debt" stroke={CHART.warning} fill={CHART.warning} fillOpacity={0.15} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -212,7 +216,7 @@ export default function ChartsPage() {
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             {debtNames.map((name, i) => (
-              <Line key={name} type="monotone" dataKey={name} name={name} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line key={name} type="monotone" dataKey={name} name={name} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -229,7 +233,7 @@ export default function ChartsPage() {
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               {assetNames.map((name, i) => (
-                <Bar key={name} dataKey={name} name={name} fill={COLORS[i % COLORS.length]} stackId="assets" />
+                <Bar key={name} dataKey={name} name={name} fill={PALETTE[i % PALETTE.length]} stackId="assets" />
               ))}
             </BarChart>
           </ResponsiveContainer>

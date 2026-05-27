@@ -26,6 +26,26 @@
   --hover-bg: rgba(0, 0, 0, 0.02);
   --badge-gray-bg: #f3f4f6;
   --badge-gray-text: #6b7280;
+
+  /* Chart semantic colors */
+  --chart-positive: #22c55e;
+  --chart-negative: #ef4444;
+  --chart-neutral: #3b82f6;
+  --chart-warning: #f59e0b;
+
+  /* Chart palette for dynamic series */
+  --chart-1: #3b82f6;
+  --chart-2: #ef4444;
+  --chart-3: #22c55e;
+  --chart-4: #f59e0b;
+  --chart-5: #8b5cf6;
+  --chart-6: #ec4899;
+  --chart-7: #06b6d4;
+  --chart-8: #84cc16;
+  --chart-9: #f97316;
+  --chart-10: #6366f1;
+  --chart-11: #14b8a6;
+  --chart-12: #e11d48;
 }
 
 .dark {
@@ -54,6 +74,26 @@
   --hover-bg: rgba(255, 255, 255, 0.03);
   --badge-gray-bg: #1c1c1e;
   --badge-gray-text: #8e8e93;
+
+  /* Chart semantic colors — slightly brighter for dark backgrounds */
+  --chart-positive: #4ade80;
+  --chart-negative: #f87171;
+  --chart-neutral: #60a5fa;
+  --chart-warning: #fbbf24;
+
+  /* Chart palette for dynamic series */
+  --chart-1: #60a5fa;
+  --chart-2: #f87171;
+  --chart-3: #4ade80;
+  --chart-4: #fbbf24;
+  --chart-5: #a78bfa;
+  --chart-6: #f472b6;
+  --chart-7: #22d3ee;
+  --chart-8: #a3e635;
+  --chart-9: #fb923c;
+  --chart-10: #818cf8;
+  --chart-11: #2dd4bf;
+  --chart-12: #fb7185;
 }
 
 @theme inline {
