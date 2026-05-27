@@ -439,39 +439,38 @@ export default function BillsPage() {
       }
 
       // 3. Advance bill's next_due_date (skip if pay-again mode)
-      if (!payAgainMode) {
+      // Use the event date (the date being paid) as the base, not getNextDueDate(),
+      // because getNextDueDate auto-skips past overdue dates and would double-advance.
+      if (!payAgainMode && payingDate) {
         const pd = getPaydaysForBill(payingBill);
-        const nextDue = getNextDueDate(payingBill, pd);
-        if (nextDue) {
-          let advancedDate: string | null = null;
+        let advancedDate: string | null = null;
 
-          if (
-            payingBill.schedule_type === "every_payday" ||
-            payingBill.schedule_type === "every_other_payday"
-          ) {
-            const step = payingBill.schedule_type === "every_other_payday" ? 2 : 1;
-            const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
-            if (futurePd.length >= step) {
-              advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
-            }
-          } else {
-            const next = advanceBillDate(
-              nextDue,
-              payingBill.schedule_type,
-              payingBill.custom_interval_days
-            );
-            advancedDate = format(next, "yyyy-MM-dd");
+        if (
+          payingBill.schedule_type === "every_payday" ||
+          payingBill.schedule_type === "every_other_payday"
+        ) {
+          const step = payingBill.schedule_type === "every_other_payday" ? 2 : 1;
+          const futurePd = pd.filter((d) => d.getTime() > payingDate.getTime());
+          if (futurePd.length >= step) {
+            advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
           }
+        } else {
+          const next = advanceBillDate(
+            payingDate,
+            payingBill.schedule_type,
+            payingBill.custom_interval_days
+          );
+          advancedDate = format(next, "yyyy-MM-dd");
+        }
 
-          if (advancedDate) {
-            const { error: billError } = await supabase
-              .from("bills")
-              .update({ next_due_date: advancedDate })
-              .eq("id", payingBill.id);
+        if (advancedDate) {
+          const { error: billError } = await supabase
+            .from("bills")
+            .update({ next_due_date: advancedDate })
+            .eq("id", payingBill.id);
 
-            if (billError) {
-              console.error("Failed to advance bill date:", billError);
-            }
+          if (billError) {
+            console.error("Failed to advance bill date:", billError);
           }
         }
       }
@@ -618,17 +617,16 @@ export default function BillsPage() {
         date: skipDate,
       });
 
-      // Advance bill's next_due_date
-      const pd = getPaydaysForBill(bill);
-      const nextDue = getNextDueDate(bill, pd);
-      if (nextDue) {
+      // Advance bill's next_due_date from the skipped event date
+      if (skippingEvent) {
+        const pd = getPaydaysForBill(bill);
         let advancedDate: string | null = null;
         if (bill.schedule_type === "every_payday" || bill.schedule_type === "every_other_payday") {
           const step = bill.schedule_type === "every_other_payday" ? 2 : 1;
-          const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
+          const futurePd = pd.filter((d) => d.getTime() > skippingEvent.date.getTime());
           if (futurePd.length >= step) advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
         } else {
-          advancedDate = format(advanceBillDate(nextDue, bill.schedule_type, bill.custom_interval_days), "yyyy-MM-dd");
+          advancedDate = format(advanceBillDate(skippingEvent.date, bill.schedule_type, bill.custom_interval_days), "yyyy-MM-dd");
         }
         if (advancedDate) {
           await supabase.from("bills").update({ next_due_date: advancedDate }).eq("id", bill.id);

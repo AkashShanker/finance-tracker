@@ -58,7 +58,7 @@ Personal finance tracker web app for Akash and wife Purnima. Replaces an Excel-b
 | 18 | supabase-transaction-payment-method.sql | payment_method_id on transactions (FK to tracked_accounts) | NEEDS RUN |
 | 19 | supabase-bills-category.sql | Add "Bills" expense category to all households | NEEDS RUN |
 | 20 | supabase-bill-end-date.sql | end_date on bills for installment plans | NEEDS RUN |
-| 21 | supabase-tracked-account-debt-link.sql | debt_id FK on tracked_accounts → debts | NEEDS RUN |
+| 21 | supabase-tracked-account-category.sql | debt_category on tracked_accounts (credit_card, auto_loan, etc.) | NEEDS RUN |
 
 ## RPC Functions (security definer, bypass RLS)
 - `seed_default_categories(h_id)` — seeds 14 default categories for new household

@@ -45,24 +45,19 @@ export default function HistoryPage() {
         .order("date", { ascending: false }),
       supabase
         .from("tracked_accounts")
-        .select("*, debts:debts(type)")
+        .select("*")
         .eq("household_id", prof.household_id)
         .eq("is_active", true)
         .order("sort_order"),
     ]);
 
     setSnapshots(snapsRes.data || []);
-    const allAccounts = accountsRes.data || [];
+    const allAccounts: TrackedAccount[] = accountsRes.data || [];
     setTrackedAccounts(allAccounts);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCcAccountNames(new Set(
       allAccounts
-        .filter((a: any) => {
-          const debt = a.debts;
-          const debtType = Array.isArray(debt) ? debt[0]?.type : debt?.type;
-          return debtType === "credit_card";
-        })
-        .map((a: any) => a.name as string)
+        .filter((a) => a.debt_category === "credit_card")
+        .map((a) => a.name)
     ));
     setLoading(false);
   }

@@ -72,7 +72,7 @@ export default function ChartsPage() {
         .order("date", { ascending: true }),
       supabase
         .from("tracked_accounts")
-        .select("name, debt_id, debts:debts(type)")
+        .select("name, debt_category")
         .eq("household_id", prof.household_id),
     ]);
 
@@ -82,17 +82,11 @@ export default function ChartsPage() {
       return;
     }
 
-    // Build a set of tracked account names that are linked to credit_card debts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Build a set of tracked account names that are credit cards
     const ccAccountNames = new Set(
       (accountsRes.data || [])
-        .filter((a: any) => {
-          const debt = a.debts;
-          // Supabase returns object for FK joins, array for reverse joins
-          const debtType = Array.isArray(debt) ? debt[0]?.type : debt?.type;
-          return debtType === "credit_card";
-        })
-        .map((a: any) => a.name as string)
+        .filter((a: { name: string; debt_category: string | null }) => a.debt_category === "credit_card")
+        .map((a: { name: string }) => a.name)
     );
 
     const allDebtNames = new Set<string>();

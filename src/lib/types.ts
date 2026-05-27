@@ -111,7 +111,7 @@ export interface TrackedAccount {
   name: string;
   account_type: "asset" | "debt";
   owner_member_id: string | null;
-  debt_id: string | null;
+  debt_category: "credit_card" | "auto_loan" | "student_loan" | "mortgage" | "personal_loan" | "medical" | "collections" | "other" | null;
   is_active: boolean;
   sort_order: number;
   created_at: string;

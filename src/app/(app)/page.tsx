@@ -280,17 +280,17 @@ export default function DashboardPage() {
 
       if (txError) { setPaySuccess(`Error: ${txError.message}`); setPaying(false); return; }
 
-      // Advance bill date
-      const pd = getPaydaysForBill(payingBill);
-      const nextDue = getNextDueDate(payingBill, pd);
-      if (nextDue) {
+      // Advance bill date from the event date being paid, not getNextDueDate()
+      // (getNextDueDate auto-skips past overdue dates which would double-advance)
+      if (payingDate) {
+        const pd = getPaydaysForBill(payingBill);
         let advancedDate: string | null = null;
         if (payingBill.schedule_type === "every_payday" || payingBill.schedule_type === "every_other_payday") {
           const step = payingBill.schedule_type === "every_other_payday" ? 2 : 1;
-          const futurePd = pd.filter((d) => d.getTime() > nextDue.getTime());
+          const futurePd = pd.filter((d) => d.getTime() > payingDate.getTime());
           if (futurePd.length >= step) advancedDate = format(futurePd[step - 1], "yyyy-MM-dd");
         } else {
-          advancedDate = format(advanceBillDate(nextDue, payingBill.schedule_type, payingBill.custom_interval_days), "yyyy-MM-dd");
+          advancedDate = format(advanceBillDate(payingDate, payingBill.schedule_type, payingBill.custom_interval_days), "yyyy-MM-dd");
         }
         if (advancedDate) {
           await supabase.from("bills").update({ next_due_date: advancedDate }).eq("id", payingBill.id);
