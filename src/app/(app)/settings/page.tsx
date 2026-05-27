@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import type { Profile, Household, HouseholdMember, TrackedAccount } from "@/lib/types";
+import type { Profile, Household, HouseholdMember, TrackedAccount, Debt } from "@/lib/types";
 import { Copy, Users, User, Plus, Trash2, Pencil, X, Check, GripVertical, AlertTriangle, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +12,7 @@ export default function SettingsPage() {
   const [household, setHousehold] = useState<Household | null>(null);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [accounts, setAccounts] = useState<TrackedAccount[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -71,14 +72,16 @@ export default function SettingsPage() {
     });
 
     if (prof.household_id) {
-      const [householdRes, membersRes, accountsRes] = await Promise.all([
+      const [householdRes, membersRes, accountsRes, debtsRes] = await Promise.all([
         supabase.from("households").select("*").eq("id", prof.household_id).single(),
         supabase.from("household_members").select("*").eq("household_id", prof.household_id).order("created_at"),
         supabase.from("tracked_accounts").select("*").eq("household_id", prof.household_id).order("sort_order"),
+        supabase.from("debts").select("*").eq("household_id", prof.household_id).order("name"),
       ]);
       setHousehold(householdRes.data);
       setMembers(membersRes.data || []);
       setAccounts(accountsRes.data || []);
+      setDebts(debtsRes.data || []);
     }
     setLoading(false);
   }
@@ -167,6 +170,12 @@ export default function SettingsPage() {
     const supabase = createClient();
     await supabase.from("tracked_accounts").delete().eq("id", id);
     setAccounts((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  async function linkDebt(accountId: string, debtId: string | null) {
+    const supabase = createClient();
+    await supabase.from("tracked_accounts").update({ debt_id: debtId }).eq("id", accountId);
+    setAccounts((prev) => prev.map((a) => a.id === accountId ? { ...a, debt_id: debtId } : a));
   }
 
   async function copyInviteCode() {
@@ -522,7 +531,7 @@ export default function SettingsPage() {
             <p className="text-sm text-muted">No asset accounts yet</p>
           ) : (
             assetAccounts.map((a) => (
-              <AccountRow key={a.id} account={a} getMemberName={getMemberName} onToggle={toggleAccount} onDelete={deleteAccount} />
+              <AccountRow key={a.id} account={a} getMemberName={getMemberName} onToggle={toggleAccount} onDelete={deleteAccount} debts={[]} onLinkDebt={linkDebt} />
             ))
           )}
         </div>
@@ -533,7 +542,7 @@ export default function SettingsPage() {
             <p className="text-sm text-muted">No debt accounts yet</p>
           ) : (
             debtAccounts.map((a) => (
-              <AccountRow key={a.id} account={a} getMemberName={getMemberName} onToggle={toggleAccount} onDelete={deleteAccount} />
+              <AccountRow key={a.id} account={a} getMemberName={getMemberName} onToggle={toggleAccount} onDelete={deleteAccount} debts={debts} onLinkDebt={linkDebt} />
             ))
           )}
         </div>
@@ -657,29 +666,52 @@ export default function SettingsPage() {
 }
 
 function AccountRow({
-  account, getMemberName, onToggle, onDelete,
+  account, getMemberName, onToggle, onDelete, debts, onLinkDebt,
 }: {
   account: TrackedAccount;
   getMemberName: (id: string | null) => string;
   onToggle: (id: string, is_active: boolean) => void;
   onDelete: (id: string) => void;
+  debts: Debt[];
+  onLinkDebt: (accountId: string, debtId: string | null) => void;
 }) {
+  const linkedDebt = debts.find((d) => d.id === account.debt_id);
+
   return (
-    <div className={`flex items-center justify-between px-3 py-2 rounded-lg bg-accent ${!account.is_active ? "opacity-50" : ""}`}>
-      <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${account.is_active ? (account.account_type === "asset" ? "bg-success" : "bg-danger") : "bg-muted"}`} />
-        <span className="text-sm font-medium">{account.name}</span>
-        <span className="text-xs text-muted">({getMemberName(account.owner_member_id)})</span>
+    <div className={`px-3 py-2 rounded-lg bg-accent ${!account.is_active ? "opacity-50" : ""}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${account.is_active ? (account.account_type === "asset" ? "bg-success" : "bg-danger") : "bg-muted"}`} />
+          <span className="text-sm font-medium">{account.name}</span>
+          <span className="text-xs text-muted">({getMemberName(account.owner_member_id)})</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onToggle(account.id, account.is_active)}
+            className={`text-xs px-2 py-0.5 rounded ${account.is_active ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" : "bg-accent text-muted"}`}
+          >
+            {account.is_active ? "Active" : "Dormant"}
+          </button>
+          <button onClick={() => onDelete(account.id)} className="p-1 text-muted hover:text-danger"><Trash2 size={14} /></button>
+        </div>
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onToggle(account.id, account.is_active)}
-          className={`text-xs px-2 py-0.5 rounded ${account.is_active ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" : "bg-accent text-muted"}`}
-        >
-          {account.is_active ? "Active" : "Dormant"}
-        </button>
-        <button onClick={() => onDelete(account.id)} className="p-1 text-muted hover:text-danger"><Trash2 size={14} /></button>
-      </div>
+      {account.account_type === "debt" && debts.length > 0 && (
+        <div className="mt-1.5 ml-4">
+          <select
+            value={account.debt_id || ""}
+            onChange={(e) => onLinkDebt(account.id, e.target.value || null)}
+            className="text-xs px-2 py-1 border border-border rounded bg-transparent focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">No linked debt</option>
+            {debts.map((d) => (
+              <option key={d.id} value={d.id}>{d.name} ({d.type.replace("_", " ")})</option>
+            ))}
+          </select>
+          {linkedDebt && (
+            <span className="text-xs text-muted ml-2">{linkedDebt.type.replace("_", " ")}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

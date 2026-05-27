@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getTodayString } from "@/lib/timezone";
-import type { Profile, Snapshot, SnapshotBalance, TrackedAccount, Debt } from "@/lib/types";
+import type { Profile, Snapshot, SnapshotBalance, TrackedAccount } from "@/lib/types";
 import Modal from "@/components/Modal";
 import { Plus, Trash2, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -37,7 +37,7 @@ export default function HistoryPage() {
     if (!prof?.household_id) return;
     setProfile(prof);
 
-    const [snapsRes, accountsRes, debtsRes] = await Promise.all([
+    const [snapsRes, accountsRes] = await Promise.all([
       supabase
         .from("snapshots")
         .select("*, balances:snapshot_balances(*)")
@@ -45,22 +45,24 @@ export default function HistoryPage() {
         .order("date", { ascending: false }),
       supabase
         .from("tracked_accounts")
-        .select("*")
+        .select("*, debts:debts(type)")
         .eq("household_id", prof.household_id)
         .eq("is_active", true)
         .order("sort_order"),
-      supabase
-        .from("debts")
-        .select("name, type")
-        .eq("household_id", prof.household_id),
     ]);
 
     setSnapshots(snapsRes.data || []);
-    setTrackedAccounts(accountsRes.data || []);
+    const allAccounts = accountsRes.data || [];
+    setTrackedAccounts(allAccounts);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCcAccountNames(new Set(
-      (debtsRes.data || [])
-        .filter((d: Pick<Debt, "name" | "type">) => d.type === "credit_card")
-        .map((d: Pick<Debt, "name" | "type">) => d.name)
+      allAccounts
+        .filter((a: any) => {
+          const debt = a.debts;
+          const debtType = Array.isArray(debt) ? debt[0]?.type : debt?.type;
+          return debtType === "credit_card";
+        })
+        .map((a: any) => a.name as string)
     ));
     setLoading(false);
   }

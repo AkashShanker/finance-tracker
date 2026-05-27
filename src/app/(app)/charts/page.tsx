@@ -63,16 +63,16 @@ export default function ChartsPage() {
       .from("profiles").select("household_id").eq("id", user.id).single();
     if (!prof?.household_id) return;
 
-    // Fetch snapshots and debts in parallel
-    const [snapsRes, debtsRes] = await Promise.all([
+    // Fetch snapshots and tracked accounts (with debt links) in parallel
+    const [snapsRes, accountsRes] = await Promise.all([
       supabase
         .from("snapshots")
         .select("*, balances:snapshot_balances(*)")
         .eq("household_id", prof.household_id)
         .order("date", { ascending: true }),
       supabase
-        .from("debts")
-        .select("name, type")
+        .from("tracked_accounts")
+        .select("name, debt_id, debts:debts(type)")
         .eq("household_id", prof.household_id),
     ]);
 
@@ -82,11 +82,17 @@ export default function ChartsPage() {
       return;
     }
 
-    // Build a set of credit card account names from the debts table
+    // Build a set of tracked account names that are linked to credit_card debts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ccAccountNames = new Set(
-      (debtsRes.data || [])
-        .filter((d) => d.type === "credit_card")
-        .map((d) => d.name)
+      (accountsRes.data || [])
+        .filter((a: any) => {
+          const debt = a.debts;
+          // Supabase returns object for FK joins, array for reverse joins
+          const debtType = Array.isArray(debt) ? debt[0]?.type : debt?.type;
+          return debtType === "credit_card";
+        })
+        .map((a: any) => a.name as string)
     );
 
     const allDebtNames = new Set<string>();
