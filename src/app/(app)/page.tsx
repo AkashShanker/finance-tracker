@@ -4,17 +4,14 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import { getTodayString } from "@/lib/timezone";
 import { getUpcomingPaydays, getNextDueDate, getBillEvents, advanceBillDate } from "@/lib/payday";
-import type { Profile, Bill, Debt, Transaction, HouseholdMember, TrackedAccount, SnapshotBalance } from "@/lib/types";
+import type { Profile, Bill, Transaction, HouseholdMember, TrackedAccount, SnapshotBalance } from "@/lib/types";
 import Modal from "@/components/Modal";
 import {
   TrendingUp,
   TrendingDown,
-  CreditCard,
   Receipt,
   AlertTriangle,
   Check,
-  ChevronDown,
-  ChevronUp,
   Download,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -32,7 +29,6 @@ interface BillEvent {
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [debts, setDebts] = useState<Debt[]>([]);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [monthlyExpenses, setMonthlyExpenses] = useState(0);
@@ -41,7 +37,6 @@ export default function DashboardPage() {
   const [trackedAccounts, setTrackedAccounts] = useState<TrackedAccount[]>([]);
   const [latestBalances, setLatestBalances] = useState<SnapshotBalance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [debtExpanded, setDebtExpanded] = useState(false);
 
   // Paid tracking
   const [paidKeys, setPaidKeys] = useState<Set<string>>(new Set());
@@ -51,7 +46,6 @@ export default function DashboardPage() {
   const [payingBill, setPayingBill] = useState<Bill | null>(null);
   const [payingDate, setPayingDate] = useState<Date | null>(null);
   const [payAmount, setPayAmount] = useState("");
-  const [payNewDebtBalance, setPayNewDebtBalance] = useState("");
   const [payNotes, setPayNotes] = useState("");
   const [paying, setPaying] = useState(false);
   const [paySuccess, setPaySuccess] = useState("");
@@ -80,12 +74,11 @@ export default function DashboardPage() {
     const todayStr = getTodayString(prof.timezone);
     const monthStart = todayStr.slice(0, 7) + "-01";
 
-    const [incomeRes, expenseRes, billsRes, debtsRes, recentRes, membersRes, txRes, accountsRes, snapshotRes, allMonthTxRes] =
+    const [incomeRes, expenseRes, billsRes, recentRes, membersRes, txRes, accountsRes, snapshotRes, allMonthTxRes] =
       await Promise.all([
         supabase.from("transactions").select("amount").eq("household_id", prof.household_id).eq("type", "income").gte("date", monthStart),
         supabase.from("transactions").select("amount").eq("household_id", prof.household_id).eq("type", "expense").gte("date", monthStart),
         supabase.from("bills").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("due_day"),
-        supabase.from("debts").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("current_balance", { ascending: false }),
         supabase.from("transactions").select("*, category:categories(*)").eq("household_id", prof.household_id).order("date", { ascending: false }).limit(5),
         supabase.from("household_members").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("created_at"),
         supabase.from("transactions").select("description, date").eq("household_id", prof.household_id).eq("type", "expense").like("description", "Bill:%"),
@@ -97,7 +90,6 @@ export default function DashboardPage() {
     setMonthlyIncome((incomeRes.data || []).reduce((sum, t) => sum + Number(t.amount), 0));
     setMonthlyExpenses((expenseRes.data || []).reduce((sum, t) => sum + Number(t.amount), 0));
     setBills(billsRes.data || []);
-    setDebts(debtsRes.data || []);
     setRecentTransactions(recentRes.data || []);
     setMembers(membersRes.data || []);
     setAllMonthTransactions(allMonthTxRes.data || []);
@@ -178,7 +170,6 @@ export default function DashboardPage() {
     rows.push(`Monthly Income,${monthlyIncome.toFixed(2)}`);
     rows.push(`Monthly Expenses,${monthlyExpenses.toFixed(2)}`);
     rows.push(`Net Income,${(monthlyIncome - monthlyExpenses).toFixed(2)}`);
-    rows.push(`Total Active Debt,${debts.reduce((s, d) => s + Number(d.current_balance), 0).toFixed(2)}`);
     rows.push(`Monthly Bills Total,${activeBills.reduce((s, b) => s + Number(b.amount), 0).toFixed(2)}`);
     rows.push("");
 
@@ -198,18 +189,7 @@ export default function DashboardPage() {
       rows.push("");
     }
 
-    // Section 3: Debts
-    if (debts.length > 0) {
-      rows.push("=== DEBTS ===");
-      rows.push("Name,Type,Current Balance,Original Balance,Interest Rate %,Minimum Payment,% Paid Off");
-      for (const d of debts) {
-        const paidOff = d.original_balance ? (((d.original_balance - d.current_balance) / d.original_balance) * 100).toFixed(1) : "";
-        rows.push(`${esc(d.name)},${d.type},${Number(d.current_balance).toFixed(2)},${d.original_balance ? Number(d.original_balance).toFixed(2) : ""},${d.interest_rate},${Number(d.minimum_payment).toFixed(2)},${paidOff}`);
-      }
-      rows.push("");
-    }
-
-    // Section 4: Bills (upcoming 30 days)
+    // Section 3: Bills (upcoming 30 days)
     const billEvents30: BillEvent[] = activeBills.flatMap((bill) => {
       const pd = getPaydaysForBill(bill);
       return getBillEvents([{ ...bill, paid_by: bill.paid_by || "shared" }], pd, 30, profile?.timezone, 7);
@@ -217,14 +197,13 @@ export default function DashboardPage() {
 
     if (billEvents30.length > 0) {
       rows.push("=== UPCOMING BILLS (Next 30 Days + 7 Day Lookback) ===");
-      rows.push("Bill Name,Due Date,Amount,Paid By,Status,Autopay,Schedule Type,Linked Debt");
+      rows.push("Bill Name,Due Date,Amount,Paid By,Status,Autopay,Schedule Type");
       for (const evt of billEvents30) {
         const bill = bills.find(b => b.id === evt.billId);
         const paid = isEventPaid(evt.billId, evt.date);
         const overdue = isEventOverdue(evt.billId, evt.date);
         const status = paid ? "Paid" : overdue ? "OVERDUE" : "Upcoming";
-        const linkedDebt = bill?.debt_id ? debts.find(d => d.id === bill.debt_id)?.name || "" : "";
-        rows.push(`${esc(evt.name)},${format(evt.date, "yyyy-MM-dd")},${evt.amount.toFixed(2)},${esc(getMemberName(evt.paid_by))},${status},${evt.is_autopay ? "Yes" : "No"},${bill?.schedule_type || ""},${esc(linkedDebt)}`);
+        rows.push(`${esc(evt.name)},${format(evt.date, "yyyy-MM-dd")},${evt.amount.toFixed(2)},${esc(getMemberName(evt.paid_by))},${status},${evt.is_autopay ? "Yes" : "No"},${bill?.schedule_type || ""}`);
       }
       rows.push("");
     }
@@ -268,13 +247,9 @@ export default function DashboardPage() {
     const bill = bills.find((b) => b.id === event.billId);
     if (!bill) return;
 
-    const linkedDebt = bill.debt_id ? debts.find((d) => d.id === bill.debt_id) : null;
-    const suggestedBalance = linkedDebt ? Math.max(0, linkedDebt.current_balance - bill.amount) : null;
-
     setPayingBill(bill);
     setPayingDate(event.date);
     setPayAmount(String(bill.amount));
-    setPayNewDebtBalance(suggestedBalance !== null ? suggestedBalance.toFixed(2) : "");
     setPayNotes("");
     setPaySuccess("");
     setPayModalOpen(true);
@@ -320,11 +295,6 @@ export default function DashboardPage() {
         if (advancedDate) {
           await supabase.from("bills").update({ next_due_date: advancedDate }).eq("id", payingBill.id);
         }
-      }
-
-      // Update linked debt
-      if (payingBill.debt_id && payNewDebtBalance !== "") {
-        await supabase.from("debts").update({ current_balance: parseFloat(payNewDebtBalance) }).eq("id", payingBill.debt_id);
       }
 
       setPaidKeys((prev) => { const next = new Set(prev); next.add(`${payingBill.id}|${payDate}`); return next; });
@@ -379,7 +349,6 @@ export default function DashboardPage() {
     return <div className="flex items-center justify-center h-64"><div className="text-muted">Loading...</div></div>;
   }
 
-  const totalDebt = debts.reduce((sum, d) => sum + Number(d.current_balance), 0);
   const totalBills = activeBills.reduce((sum, b) => sum + Number(b.amount), 0);
   const netIncome = monthlyIncome - monthlyExpenses;
 
@@ -402,11 +371,10 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <SummaryCard title="Monthly Income" amount={monthlyIncome} icon={<TrendingUp className="text-emerald-400" size={20} />} color="text-emerald-500 dark:text-emerald-400" bg="bg-emerald-50/80 dark:bg-emerald-500/10" />
         <SummaryCard title="Monthly Expenses" amount={monthlyExpenses} icon={<TrendingDown className="text-rose-400" size={20} />} color="text-rose-400" bg="bg-rose-50/80 dark:bg-rose-500/10" />
         <SummaryCard title="Monthly Bills" amount={totalBills} icon={<Receipt className="text-amber-400" size={20} />} color="text-amber-500 dark:text-amber-400" bg="bg-amber-50/80 dark:bg-amber-500/10" />
-        <SummaryCard title="Total Debt" amount={totalDebt} icon={<CreditCard className="text-violet-400" size={20} />} color="text-violet-500 dark:text-violet-400" bg="bg-violet-50/80 dark:bg-violet-500/10" />
       </div>
 
       {/* Net Income Banner */}
@@ -429,9 +397,6 @@ export default function DashboardPage() {
             {upcomingEvents.map((evt, i) => {
               const paid = isEventPaid(evt.billId, evt.date);
               const overdue = isEventOverdue(evt.billId, evt.date);
-              const bill = bills.find((b) => b.id === evt.billId);
-              const linkedDebt = bill?.debt_id ? debts.find((d) => d.id === bill.debt_id) : null;
-
               return (
                 <div
                   key={`${evt.billId}-${i}`}
@@ -445,11 +410,6 @@ export default function DashboardPage() {
                       <span className="text-xs text-muted">{format(evt.date, "EEE, MMM d")}</span>
                       {evt.is_autopay && (
                         <span className="text-xs bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Autopay</span>
-                      )}
-                      {linkedDebt && (
-                        <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-full">
-                          Debt: {formatCurrency(linkedDebt.current_balance)}
-                        </span>
                       )}
                     </div>
                     <p className="text-xs text-muted mt-0.5">{getMemberName(evt.paid_by)}</p>
@@ -513,51 +473,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Debt Overview — collapsible */}
-      {debts.length > 0 && (
-        <div className="bg-card-alpha backdrop-blur-sm rounded-2xl border border-border shadow-[var(--shadow)]">
-          <button
-            onClick={() => setDebtExpanded(!debtExpanded)}
-            className="w-full flex items-center justify-between p-5 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide">Debt Overview</h2>
-              <span className="text-xs text-muted font-medium">{formatCurrency(totalDebt)} total</span>
-            </div>
-            {debtExpanded ? <ChevronUp size={20} className="text-muted" /> : <ChevronDown size={20} className="text-muted" />}
-          </button>
-          {debtExpanded && (
-            <div className="px-5 pb-5 space-y-3">
-              {debts.map((debt) => {
-                const progress = debt.original_balance
-                  ? ((debt.original_balance - debt.current_balance) / debt.original_balance) * 100
-                  : 0;
-                return (
-                  <div key={debt.id}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium">{debt.name}</span>
-                      <span className="font-semibold">{formatCurrency(debt.current_balance)}</span>
-                    </div>
-                    {debt.original_balance && (
-                      <div className="w-full bg-accent rounded-full h-2">
-                        <div
-                          className="bg-primary rounded-full h-2 transition-all"
-                          style={{ width: `${Math.min(progress, 100)}%` }}
-                        />
-                      </div>
-                    )}
-                    <div className="flex justify-between text-xs text-muted mt-1">
-                      <span>{debt.interest_rate}% APR</span>
-                      {debt.original_balance && <span>{progress.toFixed(0)}% paid off · Started at {formatCurrency(debt.original_balance)}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Pay Modal */}
       <Modal
         open={payModalOpen}
@@ -597,35 +512,11 @@ export default function DashboardPage() {
                 type="number"
                 step="0.01"
                 value={payAmount}
-                onChange={(e) => {
-                  setPayAmount(e.target.value);
-                  if (payingBill?.debt_id) {
-                    const debt = debts.find((d) => d.id === payingBill.debt_id);
-                    if (debt) setPayNewDebtBalance(Math.max(0, debt.current_balance - parseFloat(e.target.value || "0")).toFixed(2));
-                  }
-                }}
+                onChange={(e) => setPayAmount(e.target.value)}
                 required
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-lg font-semibold"
               />
             </div>
-
-            {payingBill?.debt_id && (() => {
-              const linkedDebt = debts.find((d) => d.id === payingBill.debt_id);
-              if (!linkedDebt) return null;
-              return (
-                <div className="bg-rose-50 dark:bg-rose-500/10 rounded-lg p-3 space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium text-danger">Linked Debt: {linkedDebt.name}</span>
-                    <span className="text-danger font-semibold">{formatCurrency(linkedDebt.current_balance)}</span>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">New Balance After Payment</label>
-                    <input type="number" step="0.01" value={payNewDebtBalance} onChange={(e) => setPayNewDebtBalance(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
-                    <p className="text-xs text-muted mt-1">Edit if interest or late charges changed the balance.</p>
-                  </div>
-                </div>
-              );
-            })()}
 
             <div>
               <label className="block text-sm font-medium mb-1">Notes <span className="text-muted font-normal">(optional)</span></label>
