@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getTodayString } from "@/lib/timezone";
-import type { Profile, Snapshot, SnapshotBalance, TrackedAccount } from "@/lib/types";
+import type { Profile, Snapshot, SnapshotBalance, TrackedAccount, Debt } from "@/lib/types";
 import Modal from "@/components/Modal";
 import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 export default function HistoryPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [trackedAccounts, setTrackedAccounts] = useState<TrackedAccount[]>([]);
+  const [ccAccountNames, setCcAccountNames] = useState<Set<string>>(new Set());
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -35,7 +36,7 @@ export default function HistoryPage() {
     if (!prof?.household_id) return;
     setProfile(prof);
 
-    const [snapsRes, accountsRes] = await Promise.all([
+    const [snapsRes, accountsRes, debtsRes] = await Promise.all([
       supabase
         .from("snapshots")
         .select("*, balances:snapshot_balances(*)")
@@ -47,10 +48,19 @@ export default function HistoryPage() {
         .eq("household_id", prof.household_id)
         .eq("is_active", true)
         .order("sort_order"),
+      supabase
+        .from("debts")
+        .select("name, type")
+        .eq("household_id", prof.household_id),
     ]);
 
     setSnapshots(snapsRes.data || []);
     setTrackedAccounts(accountsRes.data || []);
+    setCcAccountNames(new Set(
+      (debtsRes.data || [])
+        .filter((d: Pick<Debt, "name" | "type">) => d.type === "credit_card")
+        .map((d: Pick<Debt, "name" | "type">) => d.name)
+    ));
     setLoading(false);
   }
 
@@ -128,7 +138,7 @@ export default function HistoryPage() {
       .filter((b) => b.account_type === "debt")
       .reduce((sum, b) => sum + Number(b.balance), 0);
     const ccDebt = balances
-      .filter((b) => b.account_type === "debt" && (b.account_name.includes("CC") || b.account_name.includes("Card") || b.account_name.includes("Slate") || b.account_name.includes("Freedom")))
+      .filter((b) => b.account_type === "debt" && ccAccountNames.has(b.account_name))
       .reduce((sum, b) => sum + Number(b.balance), 0);
     return { totalAssets, totalDebt, netWorth: totalAssets - totalDebt, ccDebt };
   }
