@@ -96,14 +96,17 @@ export default function DashboardPage() {
     setTrackedAccounts(accountsRes.data || []);
     setLatestBalances(snapshotRes.data?.[0]?.balances || []);
 
-    // Build paid keys
+    // Build paid keys — extract bill ID from description "[uuid]", fallback to name match
     const fetchedBills = billsRes.data || [];
     const keys = new Set<string>();
     for (const tx of txRes.data || []) {
-      const billName = tx.description?.replace(/^Bill:\s*/, "").split(" — ")[0];
-      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
-      if (matchedBill && tx.date) {
-        keys.add(`${matchedBill.id}|${tx.date}`);
+      const desc = tx.description?.replace(/^Bill:\s*/, "") || "";
+      const idMatch = desc.match(/\[([0-9a-f-]{36})\]/);
+      const billId = idMatch
+        ? idMatch[1]
+        : fetchedBills.find((b: Bill) => b.name === desc.split(" — ")[0].trim())?.id;
+      if (billId && tx.date) {
+        keys.add(`${billId}|${tx.date}`);
       }
     }
     setPaidKeys(keys);
@@ -274,7 +277,7 @@ export default function DashboardPage() {
         user_id: user.id,
         amount,
         type: "expense",
-        description: `Bill: ${payingBill.name}${payNotes ? ` — ${payNotes}` : ""}`,
+        description: `Bill: ${payingBill.name} [${payingBill.id}]${payNotes ? ` — ${payNotes}` : ""}`,
         date: payDate,
       });
 
@@ -321,10 +324,22 @@ export default function DashboardPage() {
       const bill = bills.find((b) => b.id === undoEvent.billId);
       const dateStr = format(undoEvent.date, "yyyy-MM-dd");
 
-      const { data: matchingTx } = await supabase
-        .from("transactions").select("id")
-        .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
-        .like("description", `Bill: ${bill?.name || ""}%`).limit(1);
+      // Try matching by bill ID first, then fall back to name
+      let matchingTx: { id: string }[] | null = null;
+      if (bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `%[${bill.id}]%`).limit(1);
+        matchingTx = data;
+      }
+      if ((!matchingTx || matchingTx.length === 0) && bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `Bill: ${bill.name}%`).limit(1);
+        matchingTx = data;
+      }
 
       if (matchingTx && matchingTx.length > 0) {
         await supabase.from("transactions").delete().eq("id", matchingTx[0].id);

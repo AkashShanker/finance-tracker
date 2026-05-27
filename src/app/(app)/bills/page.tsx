@@ -115,13 +115,25 @@ export default function BillsPage() {
 
     const fetchedBills = billsRes.data || [];
 
+    // Parse bill ID from description: "Bill: Name [uuid]" or "Bill: Name — notes"
+    function extractBillId(desc: string | null, prefix: string): string | null {
+      if (!desc) return null;
+      const withoutPrefix = desc.replace(new RegExp(`^${prefix}:\\s*`), "");
+      // Try to extract [uuid] — new format
+      const idMatch = withoutPrefix.match(/\[([0-9a-f-]{36})\]/);
+      if (idMatch) return idMatch[1];
+      // Fallback: match by name (old format)
+      const billName = withoutPrefix.split(" — ")[0].trim();
+      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
+      return matchedBill?.id || null;
+    }
+
     // Build paid keys from "Bill:" transactions
     const keys = new Set<string>();
     for (const tx of txRes.data || []) {
-      const billName = tx.description?.replace(/^Bill:\s*/, "").split(" — ")[0];
-      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
-      if (matchedBill && tx.date) {
-        keys.add(`${matchedBill.id}|${tx.date}`);
+      const billId = extractBillId(tx.description, "Bill");
+      if (billId && tx.date) {
+        keys.add(`${billId}|${tx.date}`);
       }
     }
     setPaidKeys(keys);
@@ -129,10 +141,9 @@ export default function BillsPage() {
     // Build skipped keys from "Skipped:" transactions
     const sKeys = new Set<string>();
     for (const tx of skipTxRes.data || []) {
-      const billName = tx.description?.replace(/^Skipped:\s*/, "").split(" — ")[0];
-      const matchedBill = fetchedBills.find((b: Bill) => b.name === billName);
-      if (matchedBill && tx.date) {
-        sKeys.add(`${matchedBill.id}|${tx.date}`);
+      const billId = extractBillId(tx.description, "Skipped");
+      if (billId && tx.date) {
+        sKeys.add(`${billId}|${tx.date}`);
       }
     }
     setSkippedKeys(sKeys);
@@ -428,7 +439,7 @@ export default function BillsPage() {
         amount,
         type: "expense",
         category_id: billsCategoryId,
-        description: `Bill: ${payingBill.name}${payNotes ? ` — ${payNotes}` : ""}`,
+        description: `Bill: ${payingBill.name} [${payingBill.id}]${payNotes ? ` — ${payNotes}` : ""}`,
         date: payDate,
       });
 
@@ -531,14 +542,22 @@ export default function BillsPage() {
       const dateStr = format(undoEvent.date, "yyyy-MM-dd");
 
       // Find and delete the matching transaction
-      const { data: matchingTx } = await supabase
-        .from("transactions")
-        .select("id")
-        .eq("household_id", profile.household_id)
-        .eq("type", "expense")
-        .eq("date", dateStr)
-        .like("description", `Bill: ${bill?.name || ""}%`)
-        .limit(1);
+      // Try matching by bill ID first (new format), then fall back to name (old format)
+      let matchingTx: { id: string }[] | null = null;
+      if (bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `%[${bill.id}]%`).limit(1);
+        matchingTx = data;
+      }
+      if ((!matchingTx || matchingTx.length === 0) && bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `Bill: ${bill.name}%`).limit(1);
+        matchingTx = data;
+      }
 
       if (matchingTx && matchingTx.length > 0) {
         const { error: delError } = await supabase
@@ -613,7 +632,7 @@ export default function BillsPage() {
         amount: 0,
         type: "expense",
         category_id: billsCategoryId,
-        description: `Skipped: ${bill.name}${skipReason ? ` — ${skipReason}` : ""}`,
+        description: `Skipped: ${bill.name} [${bill.id}]${skipReason ? ` — ${skipReason}` : ""}`,
         date: skipDate,
       });
 
@@ -654,10 +673,22 @@ export default function BillsPage() {
       const bill = bills.find((b) => b.id === event.billId);
       const dateStr = format(event.date, "yyyy-MM-dd");
 
-      const { data: matchingTx } = await supabase
-        .from("transactions").select("id")
-        .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
-        .like("description", `Skipped: ${bill?.name || ""}%`).limit(1);
+      // Try matching by bill ID first (new format), then fall back to name (old format)
+      let matchingTx: { id: string }[] | null = null;
+      if (bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `%[${bill.id}]%`).limit(1);
+        matchingTx = data;
+      }
+      if ((!matchingTx || matchingTx.length === 0) && bill) {
+        const { data } = await supabase
+          .from("transactions").select("id")
+          .eq("household_id", profile.household_id).eq("type", "expense").eq("date", dateStr)
+          .like("description", `Skipped: ${bill.name}%`).limit(1);
+        matchingTx = data;
+      }
 
       if (matchingTx && matchingTx.length > 0) {
         await supabase.from("transactions").delete().eq("id", matchingTx[0].id);
