@@ -171,9 +171,10 @@ export default function DashboardPage() {
     rows.push("=== FINANCIAL SUMMARY ===");
     rows.push(`Report Date,${todayStr}`);
     rows.push(`Monthly Income,${monthlyIncome.toFixed(2)}`);
-    rows.push(`Monthly Expenses,${monthlyExpenses.toFixed(2)}`);
+    rows.push(`Monthly Bills Paid,${billExpenses.toFixed(2)}`);
+    rows.push(`Other Spending,${otherSpending.toFixed(2)}`);
+    rows.push(`Total Expenses,${monthlyExpenses.toFixed(2)}`);
     rows.push(`Net Income,${(monthlyIncome - monthlyExpenses).toFixed(2)}`);
-    rows.push(`Monthly Bills Total,${activeBills.reduce((s, b) => s + Number(b.amount), 0).toFixed(2)}`);
     rows.push("");
 
     // Section 2: Account Balances (from latest snapshot)
@@ -365,6 +366,11 @@ export default function DashboardPage() {
   }
 
   const totalBills = activeBills.reduce((sum, b) => sum + Number(b.amount), 0);
+  // Split expenses: bill payments vs other spending
+  const billExpenses = allMonthTransactions
+    .filter((t) => t.type === "expense" && (t.description?.startsWith("Bill:") || t.description?.startsWith("Skipped:")))
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const otherSpending = monthlyExpenses - billExpenses;
   const netIncome = monthlyIncome - monthlyExpenses;
 
   return (
@@ -386,10 +392,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <SummaryCard title="Monthly Income" amount={monthlyIncome} icon={<TrendingUp className="text-emerald-400" size={20} />} color="text-emerald-500 dark:text-emerald-400" bg="bg-emerald-50/80 dark:bg-emerald-500/10" />
-        <SummaryCard title="Monthly Expenses" amount={monthlyExpenses} icon={<TrendingDown className="text-rose-400" size={20} />} color="text-rose-400" bg="bg-rose-50/80 dark:bg-rose-500/10" />
-        <SummaryCard title="Monthly Bills" amount={totalBills} icon={<Receipt className="text-amber-400" size={20} />} color="text-amber-500 dark:text-amber-400" bg="bg-amber-50/80 dark:bg-amber-500/10" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <SummaryCard title="Income" amount={monthlyIncome} icon={<TrendingUp className="text-emerald-400" size={20} />} color="text-emerald-500 dark:text-emerald-400" bg="bg-emerald-50/80 dark:bg-emerald-500/10" />
+        <SummaryCard title="Bills Paid" amount={billExpenses} icon={<Receipt className="text-amber-400" size={20} />} color="text-amber-500 dark:text-amber-400" bg="bg-amber-50/80 dark:bg-amber-500/10" />
+        <SummaryCard title="Other Spending" amount={otherSpending} icon={<TrendingDown className="text-rose-400" size={20} />} color="text-rose-400" bg="bg-rose-50/80 dark:bg-rose-500/10" />
+        <SummaryCard title="Total Expenses" amount={monthlyExpenses} icon={<TrendingDown className="text-muted" size={20} />} color="text-foreground" bg="bg-accent" />
       </div>
 
       {/* Net Income Banner */}
