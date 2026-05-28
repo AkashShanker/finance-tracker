@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import { getTodayString } from "@/lib/timezone";
 import { getUpcomingPaydays, getNextDueDate, getBillEvents, advanceBillDate } from "@/lib/payday";
-import type { Profile, Bill, Transaction, HouseholdMember, TrackedAccount, SnapshotBalance } from "@/lib/types";
+import type { Profile, Bill, Transaction, HouseholdMember, TrackedAccount, SnapshotBalance, Debt } from "@/lib/types";
 import Modal from "@/components/Modal";
 import {
   TrendingUp,
@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [allMonthTransactions, setAllMonthTransactions] = useState<Transaction[]>([]);
   const [trackedAccounts, setTrackedAccounts] = useState<TrackedAccount[]>([]);
   const [latestBalances, setLatestBalances] = useState<SnapshotBalance[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Paid tracking
@@ -74,7 +75,7 @@ export default function DashboardPage() {
     const todayStr = getTodayString(prof.timezone);
     const monthStart = todayStr.slice(0, 7) + "-01";
 
-    const [incomeRes, expenseRes, billsRes, recentRes, membersRes, txRes, accountsRes, snapshotRes, allMonthTxRes] =
+    const [incomeRes, expenseRes, billsRes, recentRes, membersRes, txRes, accountsRes, snapshotRes, allMonthTxRes, debtsRes] =
       await Promise.all([
         supabase.from("transactions").select("amount").eq("household_id", prof.household_id).eq("type", "income").gte("date", monthStart),
         supabase.from("transactions").select("amount").eq("household_id", prof.household_id).eq("type", "expense").gte("date", monthStart),
@@ -85,6 +86,7 @@ export default function DashboardPage() {
         supabase.from("tracked_accounts").select("*").eq("household_id", prof.household_id).eq("is_active", true).order("sort_order"),
         supabase.from("snapshots").select("*, balances:snapshot_balances(*)").eq("household_id", prof.household_id).order("date", { ascending: false }).limit(1),
         supabase.from("transactions").select("*, category:categories(*)").eq("household_id", prof.household_id).gte("date", monthStart).order("date", { ascending: false }),
+        supabase.from("debts").select("*").eq("household_id", prof.household_id).order("name"),
       ]);
 
     setMonthlyIncome((incomeRes.data || []).reduce((sum, t) => sum + Number(t.amount), 0));
@@ -95,6 +97,7 @@ export default function DashboardPage() {
     setAllMonthTransactions(allMonthTxRes.data || []);
     setTrackedAccounts(accountsRes.data || []);
     setLatestBalances(snapshotRes.data?.[0]?.balances || []);
+    setDebts(debtsRes.data || []);
 
     // Build paid keys — extract bill ID from description "[uuid]", fallback to name match
     const fetchedBills = billsRes.data || [];
@@ -166,34 +169,143 @@ export default function DashboardPage() {
       const s = String(v ?? "");
       return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
     };
+    const fmtAmt = (n: number) => n.toFixed(2);
 
-    // Section 1: Summary
+    // ============================================================
+    // Build lookups: debt info by account name for APR/min/status
+    // ============================================================
+    const debtByName = new Map<string, Debt>();
+    for (const d of debts) debtByName.set(d.name, d);
+    // Also try matching tracked_account names to debt names (they may differ)
+    // e.g. tracked_account "Chase Freedom" → debt "Chase Freedom (wife)"
+    const debtByTrackedName = new Map<string, Debt>();
+    for (const ta of trackedAccounts) {
+      if (ta.account_type !== "debt") continue;
+      // Exact match first
+      const exact = debts.find(d => d.name === ta.name);
+      if (exact) { debtByTrackedName.set(ta.name, exact); continue; }
+      // Fuzzy: tracked name is a prefix of debt name
+      const fuzzy = debts.find(d => d.name.startsWith(ta.name));
+      if (fuzzy) debtByTrackedName.set(ta.name, fuzzy);
+    }
+
+    // ============================================================
+    // Section 1: Financial Summary (non-overlapping)
+    // ============================================================
+    // Fixed bills = bill-related expense transactions this month
+    // Variable spending = non-bill expenses
+    const fixedBills = allMonthTransactions
+      .filter(t => t.type === "expense" && (t.description?.startsWith("Bill:") || t.description?.startsWith("Skipped:")))
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const variableSpending = monthlyExpenses - fixedBills;
+
+    // Checking buffer from latest snapshot
+    const checkingBal = latestBalances.find(b => b.account_name === "Checking");
+    const checkingBuffer = checkingBal ? Number(checkingBal.balance) : 0;
+
+    // Cycle projection: find next primary payday, sum bills due before it
+    const primaryMember = members.find(m => m.name?.toLowerCase().includes("akash")) || members[0];
+    let nextPayday: Date | null = null;
+    let expectedIncome = 0;
+    if (primaryMember?.next_pay_date && primaryMember?.pay_frequency) {
+      const pds = getUpcomingPaydays(primaryMember.next_pay_date, primaryMember.pay_frequency, 4, profile?.timezone);
+      // Find next payday that's in the future
+      nextPayday = pds.find(d => d.getTime() > today.getTime()) || null;
+    }
+
+    // Bills due between now and next payday
+    let scheduledBillsThisCycle = 0;
+    if (nextPayday) {
+      const cycleEvents: BillEvent[] = activeBills.flatMap((bill) => {
+        const pd = getPaydaysForBill(bill);
+        return getBillEvents([{ ...bill, paid_by: bill.paid_by || "shared" }], pd, 30, profile?.timezone);
+      });
+      scheduledBillsThisCycle = cycleEvents
+        .filter(evt => evt.date.getTime() >= today.getTime() && evt.date.getTime() < nextPayday.getTime() && !isEventPaid(evt.billId, evt.date))
+        .reduce((sum, evt) => sum + evt.amount, 0);
+    }
+
+    // All member income this cycle
+    if (nextPayday) {
+      for (const m of members) {
+        if (m.next_pay_date && m.pay_frequency) {
+          const pds = getUpcomingPaydays(m.next_pay_date, m.pay_frequency, 8, profile?.timezone);
+          for (const pd of pds) {
+            if (pd.getTime() >= today.getTime() && pd.getTime() < nextPayday.getTime()) {
+              // Estimate paycheck from member (rough — use profile data if available)
+              expectedIncome += 0; // Can't know paycheck amount without data
+            }
+          }
+        }
+      }
+    }
+
+    const projectedBuffer = nextPayday ? checkingBuffer - scheduledBillsThisCycle : 0;
+
     rows.push("=== FINANCIAL SUMMARY ===");
     rows.push(`Report Date,${todayStr}`);
-    rows.push(`Monthly Income,${monthlyIncome.toFixed(2)}`);
-    rows.push(`Monthly Bills Paid,${billExpenses.toFixed(2)}`);
-    rows.push(`Other Spending,${otherSpending.toFixed(2)}`);
-    rows.push(`Total Expenses,${monthlyExpenses.toFixed(2)}`);
-    rows.push(`Net Income,${(monthlyIncome - monthlyExpenses).toFixed(2)}`);
+    rows.push(`Monthly Income,${fmtAmt(monthlyIncome)}`);
+    rows.push(`Fixed Bills (Paid This Month),${fmtAmt(fixedBills)}`);
+    rows.push(`Variable Spending,${fmtAmt(variableSpending)}`);
+    rows.push(`Total Outflow,${fmtAmt(monthlyExpenses)}`);
+    rows.push(`Net (Income - Outflow),${fmtAmt(monthlyIncome - monthlyExpenses)}`);
+    rows.push(`Current Checking Buffer,${fmtAmt(checkingBuffer)}`);
+    if (nextPayday) {
+      rows.push(`Next Payday,${format(nextPayday, "yyyy-MM-dd")}`);
+      rows.push(`Scheduled Bills Before Next Payday,${fmtAmt(scheduledBillsThisCycle)}`);
+      rows.push(`Projected Buffer at Next Payday,${fmtAmt(projectedBuffer)}`);
+    }
     rows.push("");
 
-    // Section 2: Account Balances (from latest snapshot)
+    // ============================================================
+    // Section 2: Account Balances with APR + Min Payment + Status
+    // ============================================================
     if (latestBalances.length > 0) {
       rows.push("=== ACCOUNT BALANCES (Latest Snapshot) ===");
-      rows.push("Account,Type,Balance");
+      rows.push("Account,Type,Balance,APR,Min Payment,Status");
       const assets = latestBalances.filter(b => b.account_type === "asset");
       const debtBals = latestBalances.filter(b => b.account_type === "debt");
-      for (const b of assets) rows.push(`${esc(b.account_name)},Asset,${Number(b.balance).toFixed(2)}`);
-      for (const b of debtBals) rows.push(`${esc(b.account_name)},Debt,${Number(b.balance).toFixed(2)}`);
+
+      for (const b of assets) {
+        rows.push(`${esc(b.account_name)},Asset,${fmtAmt(Number(b.balance))},,,active`);
+      }
+      for (const b of debtBals) {
+        const debt = debtByTrackedName.get(b.account_name) || debtByName.get(b.account_name);
+        const bal = Number(b.balance);
+        const apr = debt ? fmtAmt(debt.interest_rate) : "";
+        const minPay = debt ? fmtAmt(debt.minimum_payment) : "";
+        const status = bal <= 0 || (debt && !debt.is_active) ? "CLOSED" : "active";
+        rows.push(`${esc(b.account_name)},Debt,${fmtAmt(bal)},${apr},${minPay},${status}`);
+      }
+
+      // Also include debts not in snapshot but in debts table
+      const snapDebtNames = new Set(debtBals.map(b => b.account_name));
+      for (const d of debts) {
+        if (!snapDebtNames.has(d.name) && !debtBals.some(b => debtByTrackedName.get(b.account_name)?.id === d.id)) {
+          const status = !d.is_active || d.current_balance <= 0 ? "CLOSED" : "active";
+          rows.push(`${esc(d.name)},Debt,${fmtAmt(d.current_balance)},${fmtAmt(d.interest_rate)},${fmtAmt(d.minimum_payment)},${status}`);
+        }
+      }
+
       const totalAssets = assets.reduce((s, b) => s + Number(b.balance), 0);
       const totalDebtBal = debtBals.reduce((s, b) => s + Number(b.balance), 0);
-      rows.push(`Total Assets,,${totalAssets.toFixed(2)}`);
-      rows.push(`Total Debt,,${totalDebtBal.toFixed(2)}`);
-      rows.push(`Net Worth,,${(totalAssets - totalDebtBal).toFixed(2)}`);
+      rows.push(`Total Assets,,${fmtAmt(totalAssets)},,,`);
+      rows.push(`Total Debt,,${fmtAmt(totalDebtBal)},,,`);
+      rows.push(`Net Worth,,${fmtAmt(totalAssets - totalDebtBal)},,,`);
       rows.push("");
     }
 
-    // Section 3: Bills (upcoming 30 days)
+    // ============================================================
+    // Section 3: Upcoming Bills (closed-account suppression + Account column)
+    // ============================================================
+    const closedDebtNames = new Set(
+      debts.filter(d => !d.is_active || d.current_balance <= 0).map(d => d.name)
+    );
+    // Also check snapshot balances for zero-balance debts
+    for (const b of latestBalances) {
+      if (b.account_type === "debt" && Number(b.balance) <= 0) closedDebtNames.add(b.account_name);
+    }
+
     const billEvents30: BillEvent[] = activeBills.flatMap((bill) => {
       const pd = getPaydaysForBill(bill);
       return getBillEvents([{ ...bill, paid_by: bill.paid_by || "shared" }], pd, 30, profile?.timezone, 7);
@@ -201,39 +313,105 @@ export default function DashboardPage() {
 
     if (billEvents30.length > 0) {
       rows.push("=== UPCOMING BILLS (Next 30 Days + 7 Day Lookback) ===");
-      rows.push("Bill Name,Due Date,Amount,Paid By,Status,Autopay,Schedule Type");
+      rows.push("Bill Name,Due Date,Amount,Account,Paid By,Status,Autopay,Schedule Type");
       for (const evt of billEvents30) {
         const bill = bills.find(b => b.id === evt.billId);
+        // Find linked account — match bill name to a tracked account or debt
+        const linkedDebt = debts.find(d => evt.name.toLowerCase().includes(d.name.toLowerCase().split(" ")[0]));
+        const linkedAccount = linkedDebt?.name || "";
+
+        // Flag if linked to a closed account
+        const isClosedAccount = linkedDebt && closedDebtNames.has(linkedDebt.name);
         const paid = isEventPaid(evt.billId, evt.date);
         const overdue = isEventOverdue(evt.billId, evt.date);
-        const status = paid ? "Paid" : overdue ? "OVERDUE" : "Upcoming";
-        rows.push(`${esc(evt.name)},${format(evt.date, "yyyy-MM-dd")},${evt.amount.toFixed(2)},${esc(getMemberName(evt.paid_by))},${status},${evt.is_autopay ? "Yes" : "No"},${bill?.schedule_type || ""}`);
+        const status = isClosedAccount ? "CLOSED ACCOUNT" : paid ? "Paid" : overdue ? "OVERDUE" : "Upcoming";
+        rows.push(`${esc(evt.name)},${format(evt.date, "yyyy-MM-dd")},${fmtAmt(evt.amount)},${esc(linkedAccount)},${esc(getMemberName(evt.paid_by))},${status},${evt.is_autopay ? "Yes" : "No"},${bill?.schedule_type || ""}`);
       }
       rows.push("");
     }
 
-    // Section 5: This month's transactions
+    // ============================================================
+    // Section 4: Transactions (deduped, with Status column)
+    // ============================================================
     if (allMonthTransactions.length > 0) {
       rows.push("=== TRANSACTIONS THIS MONTH ===");
-      rows.push("Date,Type,Description,Category,Amount");
+      rows.push("Date,Type,Description,Category,Amount,Status");
+
+      // Dedup: same date + base description (strip UUID) + amount = keep first
+      const seen = new Set<string>();
+      const deduped: typeof allMonthTransactions = [];
       for (const tx of allMonthTransactions) {
-        const cat = tx.category ? `${tx.category.icon} ${tx.category.name}` : "";
-        rows.push(`${tx.date},${tx.type},${esc(tx.description || "")},${esc(cat)},${Number(tx.amount).toFixed(2)}`);
+        const baseDesc = (tx.description || "").replace(/\s*\[[0-9a-f-]{36}\]/g, "").trim();
+        const key = `${tx.date}|${baseDesc}|${Number(tx.amount).toFixed(2)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(tx);
+        }
+      }
+
+      for (const tx of deduped) {
+        const cat = tx.category ? `${tx.category.icon} ${tx.category.name}` : "Uncategorized";
+        const desc = (tx.description || "").replace(/\s*\[[0-9a-f-]{36}\]/g, "").trim();
+        // Determine status
+        let status = "paid";
+        if (tx.description?.startsWith("Skipped:")) status = "skipped";
+        else if (Number(tx.amount) === 0 && tx.description?.startsWith("Bill:")) status = "skipped";
+        rows.push(`${tx.date},${tx.type},${esc(desc)},${esc(cat)},${fmtAmt(Number(tx.amount))},${status}`);
       }
       rows.push("");
     }
 
-    // Section 6: Household members & pay schedules
+    // ============================================================
+    // Section 5: Household Members with surplus estimate
+    // ============================================================
     if (members.length > 0) {
       rows.push("=== HOUSEHOLD MEMBERS ===");
-      rows.push("Name,Pay Frequency,Next Payday");
+      rows.push("Name,Pay Frequency,Next Payday,Est. Monthly Bills");
       for (const m of members) {
-        let nextPayday = "";
+        let nextPd = "";
         if (m.next_pay_date && m.pay_frequency) {
           const pds = getUpcomingPaydays(m.next_pay_date, m.pay_frequency, 1, profile?.timezone);
-          if (pds.length > 0) nextPayday = format(pds[0], "yyyy-MM-dd");
+          if (pds.length > 0) nextPd = format(pds[0], "yyyy-MM-dd");
         }
-        rows.push(`${esc(m.name)},${m.pay_frequency || ""},${nextPayday}`);
+        // Sum bills assigned to this member
+        const memberBills = activeBills.filter(b => b.paid_by === m.id);
+        const memberBillTotal = memberBills.reduce((s, b) => s + Number(b.amount), 0);
+        rows.push(`${esc(m.name)},${m.pay_frequency || ""},${nextPd},${fmtAmt(memberBillTotal)}`);
+      }
+      rows.push("");
+    }
+
+    // ============================================================
+    // Section 6: Cycle Projection
+    // ============================================================
+    if (nextPayday) {
+      rows.push("=== CYCLE PROJECTION (to next payday) ===");
+      rows.push(`Starting Checking,${fmtAmt(checkingBuffer)}`);
+      rows.push(`Scheduled Bills (this cycle),${fmtAmt(scheduledBillsThisCycle)}`);
+      rows.push(`Projected Ending Buffer,${fmtAmt(projectedBuffer)}`);
+
+      // Compute lowest projected balance by walking through bills chronologically
+      const cycleEvents = activeBills.flatMap((bill) => {
+        const pd = getPaydaysForBill(bill);
+        return getBillEvents([{ ...bill, paid_by: bill.paid_by || "shared" }], pd, 30, profile?.timezone);
+      })
+        .filter(evt => evt.date.getTime() >= today.getTime() && evt.date.getTime() < nextPayday.getTime() && !isEventPaid(evt.billId, evt.date))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+      let runningBalance = checkingBuffer;
+      let lowestBalance = checkingBuffer;
+      let lowestDate = todayStr;
+      for (const evt of cycleEvents) {
+        runningBalance -= evt.amount;
+        if (runningBalance < lowestBalance) {
+          lowestBalance = runningBalance;
+          lowestDate = format(evt.date, "yyyy-MM-dd");
+        }
+      }
+      rows.push(`Lowest Projected Balance,${fmtAmt(lowestBalance)}`);
+      rows.push(`Lowest Balance Date,${lowestDate}`);
+      if (lowestBalance < 0) {
+        rows.push(`⚠️ WARNING: Balance goes negative on ${lowestDate} — NSF risk`);
       }
     }
 
