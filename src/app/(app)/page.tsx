@@ -184,9 +184,12 @@ export default function DashboardPage() {
       // Exact match first
       const exact = debts.find(d => d.name === ta.name);
       if (exact) { debtByTrackedName.set(ta.name, exact); continue; }
-      // Fuzzy: tracked name is a prefix of debt name
-      const fuzzy = debts.find(d => d.name.startsWith(ta.name));
-      if (fuzzy) debtByTrackedName.set(ta.name, fuzzy);
+      // Fuzzy: tracked name is a prefix of debt name — only apply if the prefix
+      // uniquely identifies one debt (two debts can share a prefix, e.g.
+      // "Discover CC" vs "Discover CC (wife)"), otherwise leave it unmatched
+      // rather than guessing wrong
+      const fuzzyMatches = debts.filter(d => d.name.startsWith(ta.name));
+      if (fuzzyMatches.length === 1) debtByTrackedName.set(ta.name, fuzzyMatches[0]);
     }
 
     // ============================================================
@@ -316,8 +319,14 @@ export default function DashboardPage() {
       rows.push("Bill Name,Due Date,Amount,Account,Paid By,Status,Autopay,Schedule Type");
       for (const evt of billEvents30) {
         const bill = bills.find(b => b.id === evt.billId);
-        // Find linked account — match bill name to a tracked account or debt
-        const linkedDebt = debts.find(d => evt.name.toLowerCase().includes(d.name.toLowerCase().split(" ")[0]));
+        // Find linked account — prefer the bill's explicit debt_id link; fall back to
+        // name matching only when unambiguous (multiple debts can share a name prefix,
+        // e.g. "Discover CC" vs "Discover CC (wife)")
+        let linkedDebt = bill?.debt_id ? debts.find(d => d.id === bill.debt_id) : undefined;
+        if (!linkedDebt) {
+          const candidates = debts.filter(d => evt.name.toLowerCase().includes(d.name.toLowerCase().split(" ")[0]));
+          linkedDebt = candidates.length === 1 ? candidates[0] : undefined;
+        }
         const linkedAccount = linkedDebt?.name || "";
 
         // Flag if linked to a closed account
